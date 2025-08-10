@@ -146,6 +146,9 @@
     .nowplaying-link{color:var(--muted);text-decoration:none}
     .nowplaying-link:hover{color:var(--text);text-decoration:underline}
 
+    /* Optional creator logo next to now playing text */
+    .creator-logo{display:none;height:18px;width:auto;vertical-align:text-bottom;margin-right:8px;border-radius:4px}
+
     /* Neon wireless signal next to Live Mix */
     .neon-signal{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;color:var(--accent);
       filter: drop-shadow(0 0 4px rgba(82,255,227,.45)) drop-shadow(0 0 10px rgba(82,255,227,.30));}
@@ -236,6 +239,7 @@
         </div>
         <div class="nowplaying">
           <a id="nowPlayingLink" href="#" target="_blank" rel="noopener" class="nowplaying-link" aria-label="Open creator link in new tab">
+            <img id="creatorLogo" class="creator-logo" alt="" />
             <span id="playlistName">—</span>
             <span> • </span>
             <span id="trackTitle">Ready</span>
@@ -586,9 +590,21 @@
       $('#playlistName').textContent = state.currentPlaylist.title || state.currentPlaylist.id;
       // Update link to point to playlist-level link if provided
       const linkEl = document.getElementById('nowPlayingLink');
+      const logoEl = document.getElementById('creatorLogo');
       const playlistLevelLink = state.currentPlaylist.link;
       if(playlistLevelLink && typeof playlistLevelLink === 'string'){
         linkEl.href = playlistLevelLink;
+      }
+      // Optional creator logo at playlist level: prefers explicit `logo`, falls back to `creatorLogo`
+      const playlistLogo = state.currentPlaylist.logo || state.currentPlaylist.creatorLogo;
+      if(typeof playlistLogo === 'string' && playlistLogo.trim()){
+        logoEl.src = playlistLogo;
+        logoEl.style.display = 'inline-block';
+        logoEl.alt = state.currentPlaylist.title ? `${state.currentPlaylist.title} logo` : 'Creator logo';
+      } else {
+        logoEl.removeAttribute('src');
+        logoEl.style.display = 'none';
+        logoEl.alt = '';
       }
     }
 
@@ -631,12 +647,22 @@
       $('#trackTitle').textContent = item.title || 'Untitled';
       // Update the now playing link based on the current item, with fallbacks
       const nowLink = document.getElementById('nowPlayingLink');
+      const logoEl = document.getElementById('creatorLogo');
       const candidateLink = item.link || item.page || item.url;
       try{
         const u = new URL(candidateLink);
         nowLink.href = u.toString();
       }catch(_){
         nowLink.removeAttribute('href');
+      }
+      // Item-level logo can override playlist-level logo if provided
+      const itemLogo = item.logo || item.creatorLogo;
+      if(typeof itemLogo === 'string' && itemLogo.trim()){
+        logoEl.src = itemLogo;
+        logoEl.style.display = 'inline-block';
+        logoEl.alt = item.title ? `${item.title} logo` : 'Creator logo';
+      } else {
+        // If no item logo, keep what reshuffleQueue set (playlist-level), do nothing
       }
       const embedInfo = toEmbed(item);
       const {provider} = embedInfo;
