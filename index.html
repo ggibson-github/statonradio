@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stanton Radio — Star Citizen Spacewave</title>
+  <meta name="description" content="A sci‑fi themed, animated space radio station that plays randomized video playlists from JSON files on a GitHub Pages static site." />
+  <style>
+    /*
+      ──────────────────────────────────────────────────────────────────────
+      STANTON RADIO — SINGLE‑FILE STATIC SITE
+      Theme: Deep space (stars, gas clouds, planets) + drifting ships + GIF zooms
+      Hosting: GitHub Pages (no server code).
+
+      FILE LAYOUT you should create in your repo:
+      /
+      ├─ index.html                          ← this file
+      ├─ /media/                             ← place all provided assets here
+      │   ├─ sc_video_1.gif … sc_video_10.gif
+      │   ├─ star‑citizen‑*.png, combat_spaceship_*.png, distant_spacestation_*.png …
+      └─ /playlists/
+          ├─ index.json                      ← manifest that lists your playlists
+          ├─ ambient.json                    ← example playlist (see template below)
+          └─ combat.json
+
+      playlists/index.json (example):
+      {
+        "playlists": ["ambient.json", "combat.json"]
+      }
+
+      playlists/ambient.json (example):
+      {
+        "title": "Ambient Drift",
+        "items": [
+          {
+            "title": "Chill Loop — Nebulae",
+            "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "link": "https://creator.example.com/nebulae"   // optional: external link for creator/title in UI
+          },
+          {
+            "title": "Rumble Sample",
+            "url": "https://rumble.com/v3vabcd-sample-track.html",
+            "durationSec": "4:00", // optional fallback if end cannot be detected; supports "mm:ss" or "h:mm:ss"
+            "link": "https://rumble.com/c/CreatorChannel"    // optional external link displayed in UI
+          }
+        ]
+      }
+
+      NOTE on embeds: YouTube is fully supported via the IFrame API (auto‑advance on end).
+      Rumble supports two modes:
+      1) **Embed mode** (default): https://rumble.com/embed/<VIDEOID>/?autoplay=2
+      2) **Creator page mode**: pass a regular watch URL (e.g. https://rumble.com/v6wxhx6-....html?mref=...&mc=...) and set `"display": "page"` for that item in your playlist to attempt loading the full page in the player. If the browser blocks framing that page, the site automatically falls back to the embed URL. You can globally prefer page mode by toggling `PREFER_RUMBLE_PAGE` inside the script.
+      We also honor optional "durationSec" to auto‑advance if an "ended" signal can't be detected.
+      ──────────────────────────────────────────────────────────────────────
+    */
+
+    :root{
+      --bg:#05060a;           /* deep space */
+      --star:#9fb3ff;         /* cool starlight */
+      --accent:#52ffe3;       /* neon cyan */
+      --accent2:#8f7dff;      /* violet glow */
+      --glass: rgba(255,255,255,0.08);
+      --glassBorder: rgba(255,255,255,0.18);
+      --text:#e6f0ff;
+      --muted:#9aa7c7;
+      /* total non-video vertical chrome inside the card (header + controls + borders) */
+      --cardChrome: 160px;
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Inter,"Helvetica Neue",Arial,sans-serif}
+    html{overflow:hidden}
+    body{overflow:hidden}
+
+    /* Space sky layers */
+    #sky{position:fixed;inset:0;overflow:hidden;z-index:0;pointer-events:none}
+
+    /* Twinkling stars using multiple background layers */
+    .stars{position:absolute;inset:0;
+      background:
+        radial-gradient(ellipse at 20% 30%, rgba(79,95,160,0.18), transparent 60%),
+        radial-gradient(ellipse at 80% 70%, rgba(113,83,171,0.14), transparent 60%),
+        radial-gradient(ellipse at 60% 15%, rgba(255,255,255,0.05), transparent 40%),
+        #05060a;
+      /* removed mask to avoid hiding corners/top-left */
+    }
+
+    /* Procedural tiny stars via pseudo element */
+    .stars::before, .stars::after{
+      content:"";position:absolute;inset:-50%;
+      background-image:
+        radial-gradient(2px 2px at 20% 30%, var(--star) 48%, transparent 52%),
+        radial-gradient(1.5px 1.5px at 55% 60%, rgba(255,255,255,.9) 50%, transparent 51%),
+        radial-gradient(1.5px 1.5px at 85% 25%, rgba(255,255,255,.8) 50%, transparent 51%),
+        radial-gradient(1px 1px at 35% 80%, rgba(255,255,255,.8) 50%, transparent 51%),
+        radial-gradient(1px 1px at 75% 45%, rgba(255,255,255,.9) 50%, transparent 51%);
+      animation: driftStars 160s linear infinite;
+      opacity:.75
+    }
+    .stars::after{animation-duration: 220s;opacity:.5;filter:blur(.3px)}
+    @keyframes driftStars{from{transform:translate3d(0,0,0)}to{transform:translate3d(10%,10%,0)}}
+
+    /* Background GIF stage (crossfading zooms) */
+    .gif-stage{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+    .bg-gif{position:absolute;inset:-5%;object-fit:cover;width:110%;height:110%;opacity:0;transition:opacity 1200ms ease}
+    .bg-gif.visible{opacity:.23;animation: kenburns 12s ease-in-out infinite}
+    @keyframes kenburns{0%{transform:scale(1) translateZ(0)}50%{transform:scale(1.06) translateZ(0)}100%{transform:scale(1) translateZ(0)}}
+
+    /* Drifting ship sprites */
+    #spriteLayer{position:absolute;inset:0;pointer-events:none}
+    .sprite{position:absolute;will-change:transform,opacity;opacity:.9;filter:drop-shadow(0 10px 20px rgba(0,0,0,.6))}
+    .sprite.flip{transform:scaleX(-1)}
+
+    /* Center stage */
+    main{position:relative;z-index:1;display:grid;place-items:center;height:100dvh;height:100svh;overflow:hidden;padding:4vmin}
+
+    .card{width:min(980px, 90vw, calc((100svh - 8vmin - var(--cardChrome)) * 16 / 9));max-height:calc(100svh - 8vmin);display:flex;flex-direction:column;min-height:0;backdrop-filter: blur(8px);
+      background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+      border:1px solid var(--glassBorder);border-radius:24px;box-shadow:0 30px 50px rgba(0,0,0,.5);
+      overflow:hidden
+    }
+
+    /* Docked variants: tall, thin, pinned to screen edge */
+    .card.docked{position:fixed;top:0;bottom:0;height:100svh;max-height:100svh;border-radius:0;z-index:2}
+    .card.dock-right{right:0;left:auto;width:clamp(280px, 28vw, 420px)}
+    .card.dock-left{left:0;right:auto;width:clamp(280px, 28vw, 420px)}
+
+    /* Tighter player layout in docked mode: portrait video area */
+    /* In docked mode, let the player flex to the remaining height to avoid clipping */
+    .card.docked .player{flex:1 1 auto; min-height:0}
+    .card.docked .player-container{position:relative; width:100%; height:100%; max-height:100%; aspect-ratio:auto}
+    .card.docked .controls{gap:8px;padding:12px 14px}
+    .card.docked .control-group{gap:6px}
+    .card.docked .controls button{font-size:.8em;padding:8px 11px;border-radius:10px}
+    .card.docked .status{font-size:11px}
+    .card.docked .title-row h1{font-size:clamp(18px, 3vw, 26px)}
+    .card.docked .nowplaying{font-size:12px}
+
+    .card-header{padding:14px 22px 6px;border-bottom:1px solid var(--glassBorder);
+      background:linear-gradient(180deg,rgba(82,255,227,.10),transparent 70%)}
+    .title-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    h1{font-size:clamp(22px, 3.2vw, 34px);margin:0;letter-spacing:.5px;line-height:1.05}
+    .badge{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--glassBorder);background:var(--glass);color:var(--accent)}
+
+    .nowplaying{font-size:14px;color:var(--muted);margin-top:6px}
+    .nowplaying-link{color:var(--muted);text-decoration:none}
+    .nowplaying-link:hover{color:var(--text);text-decoration:underline}
+
+    /* Neon wireless signal next to Live Mix */
+    .neon-signal{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;color:var(--accent);
+      filter: drop-shadow(0 0 4px rgba(82,255,227,.45)) drop-shadow(0 0 10px rgba(82,255,227,.30));}
+    .neon-signal svg{display:block}
+    .neon-signal .arc{stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;opacity:.5}
+    .neon-signal .dot{fill:currentColor;opacity:.9;filter: drop-shadow(0 0 6px rgba(82,255,227,.8))}
+    @keyframes neonPulse{0%{opacity:.25}50%{opacity:1}100%{opacity:.25}}
+    .neon-signal .arc1{animation:neonPulse 1.8s ease-in-out infinite}
+    .neon-signal .arc2{animation:neonPulse 1.8s ease-in-out -.45s infinite}
+    .neon-signal .arc3{animation:neonPulse 1.8s ease-in-out -.9s infinite}
+
+    .player{position:relative;display:flex;justify-content:center;align-items:center;min-height:0;background:rgba(0,0,0,.45);border-top:1px solid rgba(255,255,255,.05);flex:1 1 auto}
+    .player-container{position:relative;aspect-ratio:16/9;height:100%;width:100%;max-height:100%;}
+    .player-container iframe, .player-container .yt-placeholder{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0}
+
+    .controls{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--glassBorder);background:linear-gradient(180deg,transparent,rgba(255,255,255,.03))}
+    .control-group{display:flex;gap:8px;align-items:center}
+    button{appearance:none;border:1px solid var(--glassBorder);background:var(--glass);color:var(--text);padding:10px 14px;border-radius:12px;font-weight:600;cursor:pointer}
+    button:hover{border-color:var(--accent);box-shadow:0 0 0 2px rgba(82,255,227,.15) inset}
+    .status{font-size:12px;color:var(--muted)}
+
+    /* Floating translucent dock button (when not placed in header flow) */
+    .dock-toggle{backdrop-filter:saturate(120%) blur(6px)}
+
+    /* Make the header's dock/expand button about half as tall */
+    .dock-toggle{padding:5px 12px; line-height:1; font-size:.9em; border-radius:10px}
+
+    /* Spend the saved space on extra room for bottom controls */
+    .controls{padding:16px 20px}
+
+    /* Tap to start overlay (to satisfy autoplay policies) */
+    #gestureGate{position:fixed;inset:0;display:grid;place-items:center;background:radial-gradient(1200px 800px at 50% 40%, rgba(28,35,58,.65), rgba(5,6,10,.96));
+      z-index:50}
+    .gate-inner{display:grid;gap:16px;place-items:center;text-align:center;max-width:720px;padding:24px}
+    .gate-logo{font-size:56px;line-height:0}
+    .gate-title{font-size:clamp(22px, 3.4vw, 40px);margin:0}
+    .gate-sub{opacity:.8}
+    .start-btn{font-size:18px;padding:14px 20px;border-radius:14px;background:linear-gradient(90deg, var(--accent), var(--accent2));border:none;color:#0a0a0a;font-weight:900;cursor:pointer}
+
+    /* Small helper tooltip style */
+    .hint{font-size:12px;color:var(--muted)}
+
+    /* Responsive niceties */
+    @media (max-width:520px){
+      .controls{flex-wrap:wrap}
+      .status{width:100%;text-align:center;margin-top:6px}
+    }
+  </style>
+</head>
+<body>
+  <!-- BACKGROUND SKY -->
+  <div id="sky" aria-hidden="true">
+    <div class="stars"></div>
+    <div class="gif-stage">
+      <img id="gifA" class="bg-gif" alt="Animated nebula background A" />
+      <img id="gifB" class="bg-gif" alt="Animated nebula background B" />
+    </div>
+    <div id="spriteLayer"></div>
+  </div>
+
+  <!-- TAP TO START (satisfy autoplay policies) -->
+  <div id="gestureGate">
+    <div class="gate-inner">
+      <div class="gate-logo">🛰️</div>
+      <h2 class="gate-title">Stanton Radio</h2>
+      <p class="gate-sub">Spacewave from the <em>Star Citizen</em> ‘verse. Animated deep‑space visuals + randomized video playlists. Tap to launch.</p>
+      <button id="startBtn" class="start-btn">Launch Station</button>
+      <div class="hint">Autoplay requires a user gesture in most browsers.</div>
+    </div>
+  </div>
+
+  <!-- MAIN CARD -->
+  <main>
+    <section class="card" aria-live="polite">
+      <header class="card-header">
+        <div class="title-row">
+          <h1>Stanton Radio</h1>
+          <span class="badge">Live Mix</span>
+          <span class="neon-signal" aria-hidden="true" title="On‑air">
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <circle class="dot" cx="12" cy="12" r="1.6" />
+              <path class="arc arc1" d="M8.5 12 C 9.8 9.5, 14.2 9.5, 15.5 12" />
+              <path class="arc arc2" d="M6 12 C 8 7, 16 7, 18 12" />
+              <path class="arc arc3" d="M3 12 C 6 4.5, 18 4.5, 21 12" />
+            </svg>
+          </span>
+          <button id="dockBtn" class="dock-toggle" style="margin-left:auto" title="Dock: click to dock right, Shift+click to dock left">⇲ Dock</button>
+        </div>
+        <div class="nowplaying">
+          <a id="nowPlayingLink" href="#" target="_blank" rel="noopener" class="nowplaying-link" aria-label="Open creator link in new tab">
+            <span id="playlistName">—</span>
+            <span> • </span>
+            <span id="trackTitle">Ready</span>
+          </a>
+        </div>
+      </header>
+
+      <div class="player">
+        <div id="playerContainer" class="player-container" aria-label="Video player"></div>
+      </div>
+
+      <div class="controls">
+        <div class="control-group">
+          <button id="prevBtn" title="Previous">⏮ Prev</button>
+          <button id="nextBtn" title="Next">⏭ Next</button>
+          <button id="shuffleBtn" title="Reshuffle playlist">🔀 Shuffle</button>
+        </div>
+        <div class="control-group">
+          <button id="reloadBtn" title="Pick a new random playlist">🎲 New Playlist</button>
+        </div>
+        <div id="status" class="status">Loading playlists…</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- YouTube IFrame API for reliable end‑of‑video detection -->
+  <script async src="https://www.youtube.com/iframe_api"></script>
+
+  <script>
+    // ─────────────────────────────────────────────────────────────────────
+    // CONFIG — update paths to match your repo structure
+    // ─────────────────────────────────────────────────────────────────────
+    const MEDIA_PATH = './media/';
+    const PLAYLISTS_MANIFEST_URL = './playlists/index.json';
+
+    // Provided content (place these exact files in /media/)
+    const GIFS = [
+      'sc_video_1.gif','sc_video_2.gif','sc_video_3.gif','sc_video_4.gif','sc_video_5.gif',
+      'sc_video_6.gif','sc_video_7.gif','sc_video_8.gif','sc_video_9.gif','sc_video_10.gif'
+    ].map(n => MEDIA_PATH + n);
+
+    const SHIPS = [
+      'star-citizen-wing-commander-vehicle-industry-spacecraft-star_1167x681.png',
+      'combat_spaceship_3081x1321.png',
+      'distant_spacestation_640x423.png',
+      'hornet-star-citizen-spacecraft-anvil-tool_1268x390.png',
+      'ship-aegis-star-citizen-frigate-f-t-w-w-w-star_3449x2110.png',
+      'ship-sky-vehicle-star-citizen-italy-star_2500x1337.png',
+      'spacecraft-interplanetary-spaceflight-star-citizen-information-interstellar-medium-star_1134x450.png',
+      'star-citizen-cargo-ship-cloud-imperium-games-transport_1181x508.png',
+      'star-citizen-centauri-alliance-game_1200x800.png',
+      'star-citizen-cloud-imperium-games-aurora-ign_709x372.png',
+      'star-citizen-cloud-imperium-games-gamescom-constellation-star_709x385.png',
+      'star-citizen-cloud-imperium-games-youtube_1502x753.png',
+      'star-citizen-corvette-ship-civilian-navy-star_9000x2527.png',
+      'star-citizen-gamescom-ship-youtube-space-cargo_2373x674.png',
+      'star-citizen-hawk-hildesheim-holzminden-goettingen-cloud-imperium-games-ship-reddit-star_1210x731.png',
+      'star-citizen-polaris-industries-cloud-imperium-games-ship-side-by-side_1401x856.png',
+      'star-citizen-spacecraft-cloud-imperium-games_773x345.png',
+      'star-citizen-spacecraft-starship-battlestar-star_1024x906.png',
+      'star-citizen-transport-hangar-vehicle-ship-star_1920x1080.png',
+      'star-citizen-tropical-cyclone-forecast-model-cloud-imperium-games-spacecraft-star_2629x1286.png'
+    ].map(n => MEDIA_PATH + n);
+
+    // Fallback playlists (used only if fetching /playlists/* fails)
+    const INLINED_PLAYLISTS = [
+      {
+        id:'ambient', title:'Ambient Drift (Inlined)', items:[
+          {title:'Chill Loop — Nebulae', url:'https://www.youtube.com/watch?v=dQw4w9WgXcQ', link:'https://creator.example.com/nebulae'},
+          {title:'Rumble Creator Page Demo', url:'https://rumble.com/v6wxhx6--stanton-radio-part-1.html?mref=3rqnmr&mc=b4zy1', display:'page', durationSec:240, link:'https://rumble.com/c/StantonRadio'}
+        ]
+      }
+    ];
+
+    // ─────────────────────────────────────────────────────────────────────
+    // UTILITIES
+    // ─────────────────────────────────────────────────────────────────────
+    const $ = sel => document.querySelector(sel);
+    const $$ = sel => Array.from(document.querySelectorAll(sel));
+
+    // Parse duration values to seconds. Accepts number, numeric string, or
+    // timecode strings like "m:ss" or "h:mm:ss". Applies defaults + minimums.
+    function parseDurationToSec(val, defaultSec, minSec){
+      const min = Number.isFinite(minSec) ? minSec : 0;
+      const def = Number.isFinite(defaultSec) ? defaultSec : 0;
+      if(val == null) return def;
+      if(typeof val === 'number' && isFinite(val)) return Math.max(min, val);
+      if(typeof val === 'string'){
+        const s = val.trim();
+        if(/^[0-9]+$/.test(s)) return Math.max(min, parseInt(s,10));
+        if(s.includes(':')){
+          const parts = s.split(':').map(t=>t.trim());
+          let total = 0;
+          if(parts.length === 2){
+            const m = parseInt(parts[0],10); const sec = parseInt(parts[1],10);
+            if(!isNaN(m) && !isNaN(sec)) total = m*60 + sec;
+          } else if(parts.length === 3){
+            const h = parseInt(parts[0],10); const m = parseInt(parts[1],10); const sec = parseInt(parts[2],10);
+            if(!isNaN(h) && !isNaN(m) && !isNaN(sec)) total = h*3600 + m*60 + sec;
+          }
+          if(total > 0) return Math.max(min, total);
+        }
+      }
+      return def;
+    }
+
+    function shuffle(a){
+      for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}
+      return a
+    }
+
+    function pick(arr){return arr[Math.floor(Math.random()*arr.length)]}
+
+    // Convert YouTube or Rumble URLs to embeddable/page forms
+    // Supports optional per-item flag: item.display === "page" to try loading full Rumble page
+    const PREFER_RUMBLE_PAGE = false; // set true to prefer creator page when possible
+    function toEmbed(item){
+      const url = typeof item === 'string' ? item : (item && item.url);
+      try{
+        const u = new URL(url);
+        const host = u.hostname.replace('www.','');
+
+        // YouTube: supports watch, youtu.be, and already-embedded forms
+        if(host.includes('youtube.com') || host === 'youtu.be'){
+          let id = null;
+          if(host === 'youtu.be'){
+            id = u.pathname.replace('/','');
+          } else if(u.pathname.startsWith('/embed/')){
+            id = u.pathname.split('/').pop();
+          } else {
+            id = u.searchParams.get('v');
+          }
+          if(!id) throw new Error('No YouTube video id');
+          return {
+            provider:'youtube',
+            embed:`https://www.youtube.com/embed/${id}?autoplay=1&rel=0&modestbranding=1&enablejsapi=1&playsinline=1`
+          };
+        }
+
+        // Rumble: supports already-embedded URLs and regular watch URLs
+        if(host.includes('rumble.com')){
+          // If this is already an /embed/ URL, preserve query (add autoplay=2 if missing)
+          if(u.pathname.startsWith('/embed/')){
+            const qs = new URLSearchParams(u.search);
+            if(!qs.has('autoplay')) qs.set('autoplay','2');
+            return { provider:'rumble', embed:`${u.origin}${u.pathname}?${qs.toString()}` };
+          }
+
+          // Regular watch link (creator page). Extract ID (vXXXX...)
+          const segs = u.pathname.split('/').filter(Boolean);
+          const last = segs[segs.length-1] || '';
+          const m = last.match(/(v[0-9A-Za-z_]+)/);
+          if(m){
+            const id = m[1];
+            const qs = new URLSearchParams(u.search);
+            if(!qs.has('autoplay')) qs.set('autoplay','2');
+            const embedUrl = `https://rumble.com/embed/${id}/?${qs.toString()}`;
+
+            const wantPage = (item && item.display === 'page') || PREFER_RUMBLE_PAGE;
+            if(wantPage){
+              return { provider:'rumblePage', page:u.toString(), fallbackEmbed:embedUrl };
+            }
+            return { provider:'rumble', embed: embedUrl };
+          }
+          throw new Error('Unrecognized Rumble URL');
+        }
+      }catch(e){ /* fall through to unknown */ }
+      return { provider:'unknown', embed:url };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // BACKGROUND GIF LOOP + SHIP SPRITES
+    // ─────────────────────────────────────────────────────────────────────
+    const gifA = $('#gifA');
+    const gifB = $('#gifB');
+    let gifIndex = Math.floor(Math.random()*GIFS.length);
+    let gifToggle = false;
+
+    function cycleGifs(){
+      const next = GIFS[gifIndex % GIFS.length];
+      const el = gifToggle ? gifA : gifB;
+      const off = gifToggle ? gifB : gifA;
+      el.src = next;
+      el.classList.add('visible');
+      off.classList.remove('visible');
+      gifToggle = !gifToggle;
+      gifIndex++;
+    }
+
+    // Rotate every ~6s to give time for the 3s loops to breathe and crossfade
+    function startGifLoop(){
+      // seed both layers
+      gifA.src = pick(GIFS);
+      gifB.src = pick(GIFS);
+      gifA.classList.add('visible');
+      setInterval(cycleGifs, 6000);
+    }
+
+    const spriteLayer = document.getElementById('spriteLayer');
+
+    function spawnSprite(){
+      const img = document.createElement('img');
+      img.src = pick(SHIPS);
+      img.className = 'sprite';
+      const fromLeft = Math.random() < 0.5;
+      const startX = fromLeft ? '-25vw' : '125vw';
+      const endX   = fromLeft ? '125vw' : '-25vw';
+      if(!fromLeft) img.classList.add('flip');
+
+      const topVh = Math.random()*80 + 5; // 5–85vh
+      const scale = Math.random()*0.6 + 0.4; // 0.4–1.0
+      const rot = (Math.random()*8 - 4) * (fromLeft?1:-1); // slight banking
+      const dur = Math.random()*25 + 22; // 22–47s
+
+      img.style.top = topVh + 'vh';
+      img.style.left = startX;
+      img.style.width = (Math.random()*22 + 12) + 'vw';
+
+      const keyframes = [
+        { transform:`translateX(0) scale(${scale}) rotate(${rot}deg)`, opacity:0 },
+        { transform:`translateX(calc(${endX} - ${startX})) scale(${scale}) rotate(${rot}deg)`, opacity:1 }
+      ];
+      const anim = img.animate(keyframes, { duration: dur*1000, easing:'linear' });
+      anim.onfinish = () => img.remove();
+      spriteLayer.appendChild(img);
+    }
+
+    function startSprites(){
+      // Seed a few immediately
+      for(let i=0;i<4;i++) setTimeout(spawnSprite, i*1500);
+      setInterval(spawnSprite, 6000 + Math.random()*6000);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // PLAYLIST LOADING & RANDOM CYCLING
+    // ─────────────────────────────────────────────────────────────────────
+    const state = {
+      manifest: null,
+      playlists: [],
+      currentPlaylist: null,
+      queue: [],
+      index: -1,
+      ytPlayer: null,
+      rumbleTimer: null,
+      started: false
+    };
+
+    async function loadManifest(){
+      try{
+        const res = await fetch(PLAYLISTS_MANIFEST_URL, {cache:'no-store'});
+        if(!res.ok) throw new Error('manifest fetch failed');
+        const data = await res.json();
+        if(!Array.isArray(data.playlists)) throw new Error('invalid manifest');
+        state.manifest = data;
+        return data.playlists;
+      }catch(err){
+        console.warn('Manifest load failed, using inlined playlists', err);
+        state.playlists = INLINED_PLAYLISTS.slice();
+        return [];
+      }
+    }
+
+    async function loadPlaylist(filename){
+      if(!filename){
+        // From inlined fallback
+        const pl = pick(state.playlists);
+        state.currentPlaylist = {...pl, id: pl.id || 'inline'};
+        return state.currentPlaylist;
+      }
+      try{
+        const res = await fetch(`./playlists/${filename}`, {cache:'no-store'});
+        if(!res.ok) throw new Error('playlist fetch failed');
+        const data = await res.json();
+        const id = filename.replace(/\.json$/,'');
+        state.currentPlaylist = { id, ...data };
+        return state.currentPlaylist;
+      }catch(err){
+        console.warn('Playlist load failed, falling back', err);
+        const pl = pick(INLINED_PLAYLISTS);
+        state.currentPlaylist = {...pl, id: pl.id || 'inline'};
+        return state.currentPlaylist;
+      }
+    }
+
+    function reshuffleQueue(){
+      if(!state.currentPlaylist || !Array.isArray(state.currentPlaylist.items)) return;
+      state.queue = shuffle(state.currentPlaylist.items.slice());
+      state.index = -1;
+      updateStatus(`Loaded ${state.queue.length} tracks from \u201C${state.currentPlaylist.title || state.currentPlaylist.id}\u201D`);
+      $('#playlistName').textContent = state.currentPlaylist.title || state.currentPlaylist.id;
+      // Update link to point to playlist-level link if provided
+      const linkEl = document.getElementById('nowPlayingLink');
+      const playlistLevelLink = state.currentPlaylist.link;
+      if(playlistLevelLink && typeof playlistLevelLink === 'string'){
+        linkEl.href = playlistLevelLink;
+      }
+    }
+
+    async function pickRandomPlaylist(){
+      // Prefer manifest when present
+      if(state.manifest && Array.isArray(state.manifest.playlists) && state.manifest.playlists.length){
+        const chosen = pick(state.manifest.playlists);
+        await loadPlaylist(chosen);
+      }else{
+        // fall back to pre‑inlined
+        await loadPlaylist(null);
+      }
+      reshuffleQueue();
+    }
+
+    function nextTrack(){
+      if(!state.queue.length){ pickRandomPlaylist(); }
+      state.index++;
+      if(state.index >= state.queue.length){
+        // Finished this playlist — pick a new random one
+        pickRandomPlaylist().then(playCurrent);
+        return;
+      }
+      playCurrent();
+    }
+
+    function prevTrack(){
+      state.index = Math.max(0, state.index-1);
+      playCurrent();
+    }
+
+    function playCurrent(){
+      clearTimeout(state.rumbleTimer); state.rumbleTimer = null;
+      const item = state.queue[state.index];
+      if(!item || !item.url || typeof item.url !== 'string' || !item.url.trim()){
+        console.warn('Skipping invalid playlist item (missing url)', item);
+        nextTrack();
+        return;
+      }
+      $('#trackTitle').textContent = item.title || 'Untitled';
+      // Update the now playing link based on the current item, with fallbacks
+      const nowLink = document.getElementById('nowPlayingLink');
+      const candidateLink = item.link || item.page || item.url;
+      try{
+        const u = new URL(candidateLink);
+        nowLink.href = u.toString();
+      }catch(_){
+        nowLink.removeAttribute('href');
+      }
+      const embedInfo = toEmbed(item);
+      const {provider} = embedInfo;
+      const container = document.getElementById('playerContainer');
+
+      // Destroy any existing YT player instance
+      if(state.ytPlayer){ try{ state.ytPlayer.destroy(); }catch(e){} state.ytPlayer = null; }
+      container.innerHTML = '';
+
+      if(provider === 'youtube'){
+        const holder = document.createElement('div'); holder.id = 'yt-player'; container.appendChild(holder);
+        makeYouTubePlayer(holder.id, embedInfo.embed);
+      }
+      else if(provider === 'rumble'){
+        const iframe = document.createElement('iframe');
+        iframe.src = embedInfo.embed;
+        iframe.allow = 'autoplay; fullscreen; picture-in-picture; encrypted-media; clipboard-write';
+        iframe.referrerPolicy = 'origin-when-cross-origin';
+        container.appendChild(iframe);
+        const secs = parseDurationToSec(item.durationSec, 300, 30); const maxMs = secs * 1000; // default 5 min
+        state.rumbleTimer = setTimeout(() => { updateStatus('Advancing (timeout)…'); nextTrack(); }, maxMs);
+      }
+      else if(provider === 'rumblePage'){
+        // Try to show the full creator page in an iframe. If blocked by X-Frame-Options,
+        // fall back to the embed URL after a short grace period.
+        const iframe = document.createElement('iframe');
+        iframe.src = embedInfo.page;
+        iframe.allow = 'autoplay; fullscreen; picture-in-picture; encrypted-media; clipboard-write';
+        iframe.referrerPolicy = 'origin-when-cross-origin';
+        container.appendChild(iframe);
+
+        let loaded = false;
+        const graceMs = 2500; // try page for ~2.5s; if it fails to load, fall back
+        const fallback = setTimeout(() => {
+          if(loaded) return;
+          updateStatus('Creator page blocked by browser — falling back to embed…');
+          iframe.src = embedInfo.fallbackEmbed || iframe.src; // swap to embed
+        }, graceMs);
+        iframe.addEventListener('load', () => { loaded = true; });
+
+        const secs = parseDurationToSec(item.durationSec, 300, 30); const maxMs = secs * 1000; // time out to advance
+        state.rumbleTimer = setTimeout(() => { updateStatus('Advancing (timeout)…'); nextTrack(); }, maxMs);
+      }
+      else{
+        // Unknown provider: open as a plain link
+        container.innerHTML = `<div class="yt-placeholder" style="display:grid;place-items:center;height:100%">`+
+          `<a href="${item.url}" target="_blank" rel="noopener">Open track in new tab</a>`+
+          `</div>`;
+        const secs = parseDurationToSec(item.durationSec, 240, 20); const maxMs = secs * 1000;
+        state.rumbleTimer = setTimeout(() => nextTrack(), maxMs);
+      }
+
+      updateStatus(`Playing ${state.index+1}/${state.queue.length}`);
+    }
+
+    function updateStatus(msg){ document.getElementById('status').textContent = msg; }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // YOUTUBE PLAYER CREATION + END HANDLING
+    // ─────────────────────────────────────────────────────────────────────
+    let youTubeApiReady = false;
+    window.onYouTubeIframeAPIReady = function(){ youTubeApiReady = true; };
+
+    function makeYouTubePlayer(elId, embedUrl){
+      // Extract the videoId again for the Player API, safer than using full URL
+      const idMatch = embedUrl.match(/embed\/([\w-]{6,})/);
+      const videoId = idMatch ? idMatch[1] : null;
+      if(!youTubeApiReady || !videoId){
+        // Wait briefly then retry
+        setTimeout(() => makeYouTubePlayer(elId, embedUrl), 200);
+        return;
+      }
+      state.ytPlayer = new YT.Player(elId, {
+        videoId,
+        playerVars: { autoplay: 1, rel: 0, modestbranding: 1, playsinline: 1 },
+        events: {
+          onReady: e => { try{ e.target.playVideo(); }catch(_){} },
+          onStateChange: e => {
+            if(e.data === YT.PlayerState.ENDED){ nextTrack(); }
+          }
+        }
+      });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // GESTURE GATE + CONTROLS
+    // ─────────────────────────────────────────────────────────────────────
+    async function startApp(){
+      if(state.started) return; state.started = true;
+      document.getElementById('gestureGate').style.display = 'none';
+      startGifLoop();
+      startSprites();
+
+      const list = await loadManifest();
+      if(list && list.length){ updateStatus('Loaded manifest. Choosing a playlist…'); }
+      await pickRandomPlaylist();
+      nextTrack();
+    }
+
+    document.getElementById('startBtn').addEventListener('click', startApp, {once:true});
+    document.getElementById('nextBtn').addEventListener('click', () => nextTrack());
+    document.getElementById('prevBtn').addEventListener('click', () => prevTrack());
+    document.getElementById('shuffleBtn').addEventListener('click', () => { reshuffleQueue(); nextTrack(); });
+    document.getElementById('reloadBtn').addEventListener('click', async () => { await pickRandomPlaylist(); nextTrack(); });
+
+    // If the tab becomes hidden for a while, gently throttle ship spawns (optional)
+    document.addEventListener('visibilitychange', () => {
+      if(document.hidden){ /* could pause background spawns if desired */ }
+    });
+
+    // Optional: keyboard shortcuts
+    window.addEventListener('keydown', e => {
+      if(e.key === 'ArrowRight') nextTrack();
+      if(e.key === 'ArrowLeft') prevTrack();
+      if(e.key.toLowerCase() === 's') { reshuffleQueue(); nextTrack(); }
+    });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // DOCKING: shrink card to a tall, thin sidebar on left or right
+    // ─────────────────────────────────────────────────────────────────────
+    const cardEl = document.querySelector('.card');
+    const dockBtn = document.getElementById('dockBtn');
+    let dockSide = (typeof localStorage !== 'undefined' && localStorage.getItem('dockSide')) || 'right';
+
+    function updateDockUi(){
+      const is = cardEl.classList.contains('docked');
+      if(is){
+        dockBtn.textContent = 'Expand';
+        dockBtn.title = 'Expand to full size (right-click to switch side)';
+      }else{
+        dockBtn.textContent = '⇲ Dock';
+        dockBtn.title = 'Dock: click to dock right, Shift+click to dock left';
+      }
+    }
+
+    function dock(side){
+      const s = side === 'left' ? 'left' : 'right';
+      cardEl.classList.add('docked');
+      cardEl.classList.toggle('dock-left', s === 'left');
+      cardEl.classList.toggle('dock-right', s === 'right');
+      dockSide = s;
+      try{ localStorage.setItem('dockSide', dockSide); }catch(_){}
+      updateDockUi();
+    }
+
+    function undock(){
+      cardEl.classList.remove('docked','dock-left','dock-right');
+      updateDockUi();
+    }
+
+    dockBtn.addEventListener('click', (e) => {
+      if(cardEl.classList.contains('docked')){ undock(); return; }
+      const side = e.shiftKey ? 'left' : dockSide;
+      dock(side);
+    });
+
+    dockBtn.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if(cardEl.classList.contains('docked')){
+        dock(cardEl.classList.contains('dock-left') ? 'right' : 'left');
+      }else{
+        dock('left');
+      }
+    });
+
+    // optional keyboard shortcut: 'd' to toggle dock
+    window.addEventListener('keydown', e => {
+      if(e.key.toLowerCase() === 'd'){
+        if(cardEl.classList.contains('docked')) undock(); else dock(dockSide || 'right');
+      }
+    });
+
+    // initialize button label
+    updateDockUi();
+  </script>
+</body>
+</html>
