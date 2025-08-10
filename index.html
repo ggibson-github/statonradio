@@ -147,7 +147,9 @@
     .nowplaying-link:hover{color:var(--text);text-decoration:underline}
 
     /* Optional creator logo next to now playing text */
-    .creator-logo{display:none;height:18px;width:auto;vertical-align:text-bottom;margin-right:8px;border-radius:4px}
+    .creator-logo{display:none;height:18px;width:auto;vertical-align:text-bottom;margin-right:8px;border-radius:4px;opacity:0;transition:opacity 150ms ease}
+    /* When enabled, blends white areas into the backdrop (approximate knockout on dark UI) */
+    .creator-logo.knock-white{mix-blend-mode:multiply}
 
     /* Neon wireless signal next to Live Mix */
     .neon-signal{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;color:var(--accent);
@@ -598,6 +600,9 @@
       // Optional creator logo at playlist level: prefers explicit `logo`, falls back to `creatorLogo`
       const playlistLogo = state.currentPlaylist.logo || state.currentPlaylist.creatorLogo;
       if(typeof playlistLogo === 'string' && playlistLogo.trim()){
+        // Hide until loaded to avoid initial flash before blend applies
+        logoEl.style.opacity = '0';
+        logoEl.onload = () => { logoEl.style.opacity = '1'; };
         logoEl.src = playlistLogo;
         logoEl.style.display = 'inline-block';
         logoEl.alt = state.currentPlaylist.title ? `${state.currentPlaylist.title} logo` : 'Creator logo';
@@ -606,6 +611,8 @@
         logoEl.style.display = 'none';
         logoEl.alt = '';
       }
+      // Optional logo blend mode (e.g., "multiply" to knock out whites)
+      logoEl.classList.toggle('knock-white', (state.currentPlaylist.logoBlend || '').toLowerCase() === 'multiply');
     }
 
     async function pickRandomPlaylist(){
@@ -658,11 +665,18 @@
       // Item-level logo can override playlist-level logo if provided
       const itemLogo = item.logo || item.creatorLogo;
       if(typeof itemLogo === 'string' && itemLogo.trim()){
+        // Hide until loaded to avoid initial flash before blend applies
+        logoEl.style.opacity = '0';
+        logoEl.onload = () => { logoEl.style.opacity = '1'; };
         logoEl.src = itemLogo;
         logoEl.style.display = 'inline-block';
         logoEl.alt = item.title ? `${item.title} logo` : 'Creator logo';
       } else {
         // If no item logo, keep what reshuffleQueue set (playlist-level), do nothing
+      }
+      // Item-level blend mode can override playlist-level blend mode if provided
+      if(typeof item.logoBlend === 'string' && item.logoBlend.trim()){
+        logoEl.classList.toggle('knock-white', item.logoBlend.toLowerCase() === 'multiply');
       }
       const embedInfo = toEmbed(item);
       const {provider} = embedInfo;
@@ -786,6 +800,7 @@
     const cardEl = document.querySelector('.card');
     const dockBtn = document.getElementById('dockBtn');
     let dockSide = (typeof localStorage !== 'undefined' && localStorage.getItem('dockSide')) || 'right';
+    let dockState = (typeof localStorage !== 'undefined' && localStorage.getItem('dockState')) || 'docked';
 
     function updateDockUi(){
       const is = cardEl.classList.contains('docked');
@@ -804,12 +819,13 @@
       cardEl.classList.toggle('dock-left', s === 'left');
       cardEl.classList.toggle('dock-right', s === 'right');
       dockSide = s;
-      try{ localStorage.setItem('dockSide', dockSide); }catch(_){}
+      try{ localStorage.setItem('dockSide', dockSide); localStorage.setItem('dockState','docked'); }catch(_){}
       updateDockUi();
     }
 
     function undock(){
       cardEl.classList.remove('docked','dock-left','dock-right');
+      try{ localStorage.setItem('dockState','expanded'); }catch(_){}
       updateDockUi();
     }
 
@@ -835,8 +851,12 @@
       }
     });
 
-    // initialize button label
-    updateDockUi();
+    // initialize state: default to docked unless user previously expanded
+    if(dockState === 'docked'){
+      dock(dockSide || 'right');
+    } else {
+      updateDockUi();
+    }
   </script>
 </body>
 </html>
