@@ -1,5 +1,7 @@
 {
   "title": "Delnorin Star Citizen",
+  "logo": "https://1a-1791.com/video/z8/p/w/g/c/pwgca.baa.5-DelnorinGames-s8zyk9.gif",
+  "publisher": "u3rqnmr",
   "items": [
     { "title": "segment_1", "link": "https://rumble.com/v6x7gl4--stanton-radio-part-12.html?mref=3rqnmr&mc=b4zy1", "url": "https://rumble.com/embed/v6v0kca/?pub=3rqnmr", "durationSec": "16:33" },
     { "title": "segment_2", "link": "https://rumble.com/v6x5tlq--stanton-radio-part-11.html?mref=3rqnmr&mc=b4zy1", "url": "https://rumble.com/embed/v6uyxcw/?pub=3rqnmr", "durationSec": "10:20" },
@@ -10,7 +12,7 @@
     { "title": "segment_7", "link": "https://rumble.com/v6wxicg--stanton-radio-part-5.html?mref=3rqnmr&mc=b4zy1", "url": "https://rumble.com/embed/v6uqm3m/?pub=3rqnmr", "durationSec": "8:29" },
     { "title": "segment_8", "link": "https://rumble.com/v6wxhzu--stanton-radio-part-2.html?mref=3rqnmr&mc=b4zy1", "url": "https://rumble.com/embed/v6uqlr0/?pub=3rqnmr", "durationSec": "4:34" },
     { "title": "segment_9", "link": "https://rumble.com/v6wxi20--stanton-radio-part-3.html?mref=3rqnmr&mc=b4zy1", "url": "https://rumble.com/embed/v6uqlt6/?pub=3rqnmr", "durationSec": "4:48" },
-    { "title": "segment_10", "link": "https://rumble.com/v6wxiec--stanton-radio-part-6.html?mref=3rqnmr&mc=b4zy1", "url": "https://rumble.com/embed/v6uqloc/?pub=3rqnmr", "durationSec": "4:41" },
+    { "title": "Part 1", "link": "https://rumble.com/v6wxiec--stanton-radio-part-6.html?mref=3rqnmr&mc=b4zy1", "url": "https://rumble.com/embed/v6uqloc/?pub=3rqnmr", "durationSec": "4:41" },
     { "title": "segment_11", "link": "https://rumble.com/v6wxhx6--stanton-radio-part-1.html?mref=3rqnmr&mc=b4zy1", "url": "https://rumble.com/embed/v6uqm5i/?pub=3rqnmr", "durationSec": "7:51" },
     { "title": "segment_12", "link": "https://rumble.com/v6wxib0--stanton-radio-part-4.html?mref=3rqnmr&mc=b4zy1", "url": "https://rumble.com/embed/v6uqm26/?pub=3rqnmr", "durationSec": "5:24" }
   ]

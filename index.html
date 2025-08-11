@@ -275,7 +275,12 @@
     // CONFIG — update paths to match your repo structure
     // ─────────────────────────────────────────────────────────────────────
     const MEDIA_PATH = './media/';
+    const DEBUG = true;
+    const log = (...args) => { try{ if(DEBUG) console.log('[SR]', ...args); }catch(_){} };
+    const warn = (...args) => { try{ if(DEBUG) console.warn('[SR]', ...args); }catch(_){} };
     const PLAYLISTS_MANIFEST_URL = './playlists/index.json';
+    // Prefer simple iframe embeds for Rumble by default
+    const USE_RUMBLE_JS = false;
 
     // Provided content (place these exact files in /media/)
     const GIFS = [
@@ -445,7 +450,12 @@
           if(u.pathname.startsWith('/embed/')){
             const qs = new URLSearchParams(u.search);
             if(!qs.has('autoplay')) qs.set('autoplay','2');
-            return { provider:'rumble', embed:`${u.origin}${u.pathname}?${qs.toString()}` };
+            // Extract id from /embed/<VID>/ optionally with trailing slash
+            const segs = u.pathname.split('/').filter(Boolean);
+            const vid = segs.length >= 2 ? segs[1] : null;
+            const info = { provider:'rumble', embed:`${u.origin}${u.pathname}?${qs.toString()}`, id: vid };
+            log('toEmbed: Rumble embed URL detected', info);
+            return info;
           }
 
           // Regular watch link (creator page). Extract ID (vXXXX...)
@@ -460,13 +470,18 @@
 
             const wantPage = (item && item.display === 'page') || PREFER_RUMBLE_PAGE;
             if(wantPage){
-              return { provider:'rumblePage', page:u.toString(), fallbackEmbed:embedUrl };
+              const info = { provider:'rumblePage', page:u.toString(), fallbackEmbed:embedUrl, id };
+              log('toEmbed: Rumble page mode preferred', info);
+              return info;
             }
-            return { provider:'rumble', embed: embedUrl };
+            const info = { provider:'rumble', embed: embedUrl, id };
+            log('toEmbed: Rumble watch URL converted to embed', info);
+            return info;
           }
           throw new Error('Unrecognized Rumble URL');
         }
       }catch(e){ /* fall through to unknown */ }
+      warn('toEmbed: unknown provider', url);
       return { provider:'unknown', embed:url };
     }
 
@@ -542,6 +557,20 @@
       setInterval(() => { spawnSprite(); }, 7000);
     }
 
+    // Dynamically load an external script and resolve when it loads
+    function loadExternalScript(src){
+      return new Promise((resolve, reject) => {
+        try{
+          const s = document.createElement('script');
+          s.src = src;
+          s.async = true;
+          s.onload = () => resolve();
+          s.onerror = () => reject(new Error('Script load failed: '+src));
+          document.head.appendChild(s);
+        }catch(err){ reject(err); }
+      });
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // PLAYLIST LOADING & RANDOM CYCLING
     // ─────────────────────────────────────────────────────────────────────
@@ -553,6 +582,11 @@
       index: -1,
       ytPlayer: null,
       rumbleTimer: null,
+      rumblePoll: null,
+      rumbleReadyTimeout: null,
+      rumbleVideoObserver: null,
+      rumbleVideoEl: null,
+      rumbleNudge: null,
       started: false
     };
 
@@ -652,8 +686,17 @@
       playCurrent();
     }
 
-    function playCurrent(){
+    function clearRumbleTimers(){
       clearTimeout(state.rumbleTimer); state.rumbleTimer = null;
+      if(state.rumblePoll){ clearInterval(state.rumblePoll); state.rumblePoll = null; }
+      if(state.rumbleReadyTimeout){ clearTimeout(state.rumbleReadyTimeout); state.rumbleReadyTimeout = null; }
+      if(state.rumbleVideoObserver){ try{ state.rumbleVideoObserver.disconnect(); }catch(_){} state.rumbleVideoObserver = null; }
+      state.rumbleVideoEl = null;
+      if(state.rumbleNudge){ try{ clearInterval(state.rumbleNudge); }catch(_){} state.rumbleNudge = null; }
+    }
+
+    function playCurrent(){
+      clearRumbleTimers();
       const item = state.queue[state.index];
       if(!item || !item.url || typeof item.url !== 'string' || !item.url.trim()){
         console.warn('Skipping invalid playlist item (missing url)', item);
@@ -661,6 +704,7 @@
         return;
       }
       $('#trackTitle').textContent = item.title || 'Untitled';
+      log('playCurrent: start', { index: state.index, of: state.queue.length, title: item.title, url: item.url });
       // Update the now playing link based on the current item, with fallbacks
       const nowLink = document.getElementById('nowPlayingLink');
       const logoEl = document.getElementById('creatorLogo');
@@ -697,18 +741,159 @@
 
       if(provider === 'youtube'){
         const holder = document.createElement('div'); holder.id = 'yt-player'; container.appendChild(holder);
+        log('playCurrent: provider youtube');
         makeYouTubePlayer(holder.id, embedInfo.embed);
       }
       else if(provider === 'rumble'){
-        const iframe = document.createElement('iframe');
-        iframe.src = embedInfo.embed;
-        iframe.allow = 'autoplay; fullscreen; picture-in-picture; encrypted-media; clipboard-write';
-        iframe.referrerPolicy = 'origin-when-cross-origin';
-        container.appendChild(iframe);
-        const secs = parseDurationToSec(item.durationSec, 300, 30); const maxMs = secs * 1000; // default 5 min
-        state.rumbleTimer = setTimeout(() => { updateStatus('Advancing (timeout)…'); nextTrack(); }, maxMs);
+        // If a playlist- or item-level publisher code (e.g., "u12345") is provided, prefer Rumble's JS API
+        const publisherCode = (item && (item.publisher || item.publisherCode)) || (state.currentPlaylist && (state.currentPlaylist.publisher || state.currentPlaylist.publisherCode));
+        const useJsApi = !!(USE_RUMBLE_JS && typeof publisherCode === 'string' && /^u[0-9a-z]+$/i.test(publisherCode) && embedInfo.id);
+        log('playCurrent: provider rumble', { id: embedInfo.id, publisherCode, useJsApi });
+        if(useJsApi){
+          const playerDivId = `rumble_${embedInfo.id}`;
+          const holder = document.createElement('div'); holder.id = playerDivId; container.appendChild(holder);
+          const jsUrl = `https://rumble.com/embedJS/${publisherCode}.${embedInfo.id}/`;
+          log('Rumble JS: loading script', jsUrl);
+          loadExternalScript(jsUrl)
+            .then(() => {
+              try{
+                if(typeof window.Rumble === 'function'){
+                  window.Rumble('play', { video: embedInfo.id, div: playerDivId, rel: 5, ia: 1, parameters: { autoplay: 2, controls: 1 } });
+                  log('Rumble JS: play invoked', { video: embedInfo.id, div: playerDivId });
+                  setTimeout(() => {
+                    try{
+                      const playersMap = window.Rumble && window.Rumble('players');
+                      const keys = playersMap && typeof playersMap === 'object' ? Object.keys(playersMap) : [];
+                      log('Rumble JS: players map keys', keys);
+                    }catch(err){ warn('Rumble JS: players dump error', err); }
+                  }, 1200);
+                  // Discover native <video> element and attach 'ended' and 'loadedmetadata' listeners
+                  try{
+                    const containerEl = document.getElementById(playerDivId);
+                    const tryWireVideo = () => {
+                      const v = containerEl && containerEl.querySelector && containerEl.querySelector('video');
+                      if(v && v !== state.rumbleVideoEl){
+                        state.rumbleVideoEl = v;
+                        log('Rumble Native: video found and wired');
+                        // When metadata loads, we usually have a reliable duration; mark ready
+                        v.addEventListener('loadedmetadata', () => {
+                          if(Number.isFinite(v.duration)){
+                            log('Rumble Native: loadedmetadata', { duration: v.duration });
+                            // clearing ready-timeout happens when poll loop marks ready; this ensures duration is set
+                          }
+                        }, { once:true });
+                        v.addEventListener('ended', () => {
+                          log('Rumble Native: ended -> advancing');
+                          clearRumbleTimers();
+                          nextTrack();
+                        }, { once:true });
+                        // Try to nudge autoplay in case the player pauses on load
+                        const nudgePlay = async () => { try{ if(v.paused) await v.play(); }catch(_){} };
+                        try{ v.muted = true; }catch(_){ }
+                        let nudgeCount = 0;
+                        if(state.rumbleNudge){ try{ clearInterval(state.rumbleNudge); }catch(_){} }
+                        state.rumbleNudge = setInterval(() => {
+                          if(!document.body.contains(v)){ clearInterval(state.rumbleNudge); state.rumbleNudge = null; return; }
+                          if(!v.paused){ clearInterval(state.rumbleNudge); state.rumbleNudge = null; return; }
+                          if(nudgeCount++ > 10){ clearInterval(state.rumbleNudge); state.rumbleNudge = null; return; }
+                          nudgePlay();
+                        }, 500);
+                      }
+                    };
+                    tryWireVideo();
+                    if(state.rumbleVideoObserver){ try{ state.rumbleVideoObserver.disconnect(); }catch(_){} }
+                    state.rumbleVideoObserver = new MutationObserver(() => tryWireVideo());
+                    if(containerEl){ state.rumbleVideoObserver.observe(containerEl, { childList:true, subtree:true }); }
+                  }catch(err){ warn('Rumble Native: observer setup error', err); }
+                  // Poll the JS player for near-end to advance promptly
+                  const pollMs = 500;
+                  let sawPlayerReady = false;
+                  let sampleTick = 0;
+                  let lastProgressTs = Date.now();
+                  state.rumblePoll = setInterval(() => {
+                    try{
+                      let player = null;
+                      if(window.Rumble){
+                        try{ player = window.Rumble('getPlayer', playerDivId); }catch(_){}
+                        if(!player){
+                          try{
+                            const all = window.Rumble('players');
+                            if(all && typeof all === 'object') player = all[playerDivId] || all[`rumble_${embedInfo.id}`] || all[embedInfo.id] || null;
+                          }catch(_){ /* ignore */ }
+                        }
+                      }
+                      let current = NaN, duration = NaN;
+                      if(player){
+                        const getC = player.getCurrentTime || player.currentTime || player.getPosition;
+                        const getD = player.getDuration || player.duration;
+                        current = Number(getC && getC.call(player));
+                        duration = Number(getD && getD.call(player));
+                      } else if(state.rumbleVideoEl){
+                        current = Number(state.rumbleVideoEl.currentTime);
+                        duration = Number(state.rumbleVideoEl.duration);
+                      } else {
+                        if(!sawPlayerReady) log('Rumble JS: player not ready yet');
+                        return;
+                      }
+                      if(!sawPlayerReady && Number.isFinite(current) && Number.isFinite(duration)){
+                        sawPlayerReady = true;
+                        log('Rumble: playback ready', { durationSource: player ? 'js' : 'native', duration });
+                        if(state.rumbleReadyTimeout){ clearTimeout(state.rumbleReadyTimeout); state.rumbleReadyTimeout = null; }
+                        // Cancel the durationSec fallback timer once we have reliable timing from JS/native
+                        if(state.rumbleTimer){ clearTimeout(state.rumbleTimer); state.rumbleTimer = null; }
+                      }
+                      if(Number.isFinite(duration) && duration > 0 && Number.isFinite(current)){
+                        // track progress heartbeat
+                        if(sampleTick === 0) lastProgressTs = Date.now();
+                        // Heartbeat roughly every ~5s
+                        sampleTick = (sampleTick + 1) % Math.max(1, Math.round(4000 / pollMs));
+                        if(sampleTick === 0) log('Rumble: progress', { current, duration });
+                        // aggressive near-end threshold + stall detection
+                        const nearEndMargin = 6.0; // seconds
+                        const stallMs = 2000; // if no progress for ~2s near end, advance
+                        if(current >= duration - nearEndMargin || (current > 0 && (Date.now() - lastProgressTs) > stallMs && current >= duration - nearEndMargin - 2)){
+                          clearRumbleTimers();
+                          log('Rumble: near-end detected, advancing', { current, duration });
+                          nextTrack();
+                        }
+                      }
+                    }catch(err){ warn('Rumble JS: poll error', err); }
+                  }, pollMs);
+                  // If neither JS nor native becomes ready, fall back to iframe
+                  state.rumbleReadyTimeout = setTimeout(() => {
+                    warn('Rumble: ready timeout — falling back to iframe');
+                    try{ if(state.rumblePoll){ clearInterval(state.rumblePoll); state.rumblePoll = null; } }catch(_){ }
+                    try{ if(state.rumbleVideoObserver){ state.rumbleVideoObserver.disconnect(); state.rumbleVideoObserver = null; } }catch(_){ }
+                    state.rumbleVideoEl = null;
+                    container.innerHTML = '';
+                    const iframe = document.createElement('iframe');
+                    iframe.src = embedInfo.embed;
+                    iframe.allow = 'autoplay; fullscreen; picture-in-picture; encrypted-media; clipboard-write';
+                    iframe.referrerPolicy = 'origin-when-cross-origin';
+                    container.appendChild(iframe);
+                  }, 10000);
+                }
+              }catch(err){ console.warn('Rumble JS play error', err); }
+            })
+            .catch(err => { warn('Rumble JS load failed, falling back to iframe', err); });
+          // Fallback auto-advance using provided duration
+          const secs = parseDurationToSec(item.durationSec, 300, 30); const maxMs = secs * 1000;
+          log('Rumble JS: setting fallback timeout', { secs });
+          state.rumbleTimer = setTimeout(() => { updateStatus('Advancing (timeout)…'); log('Rumble JS: fallback timeout fired'); nextTrack(); }, maxMs);
+        } else {
+          // Default iframe embed
+          const iframe = document.createElement('iframe');
+          iframe.src = embedInfo.embed;
+          iframe.allow = 'autoplay; fullscreen; picture-in-picture; encrypted-media; clipboard-write';
+          iframe.referrerPolicy = 'origin-when-cross-origin';
+          container.appendChild(iframe);
+          const secs = parseDurationToSec(item.durationSec, 300, 30); const maxMs = secs * 1000; // default 5 min
+          log('Rumble iframe: setting fallback timeout', { secs });
+          state.rumbleTimer = setTimeout(() => { updateStatus('Advancing (timeout)…'); log('Rumble iframe: fallback timeout fired'); nextTrack(); }, maxMs);
+        }
       }
       else if(provider === 'rumblePage'){
+        log('playCurrent: provider rumblePage');
         // Try to show the full creator page in an iframe. If blocked by X-Frame-Options,
         // fall back to the embed URL after a short grace period.
         const iframe = document.createElement('iframe');
@@ -722,20 +907,24 @@
         const fallback = setTimeout(() => {
           if(loaded) return;
           updateStatus('Creator page blocked by browser — falling back to embed…');
+          warn('Rumble page: blocked by browser, falling back to embed');
           iframe.src = embedInfo.fallbackEmbed || iframe.src; // swap to embed
         }, graceMs);
         iframe.addEventListener('load', () => { loaded = true; });
 
         const secs = parseDurationToSec(item.durationSec, 300, 30); const maxMs = secs * 1000; // time out to advance
-        state.rumbleTimer = setTimeout(() => { updateStatus('Advancing (timeout)…'); nextTrack(); }, maxMs);
+        log('Rumble page: setting fallback timeout', { secs });
+        state.rumbleTimer = setTimeout(() => { updateStatus('Advancing (timeout)…'); log('Rumble page: fallback timeout fired'); nextTrack(); }, maxMs);
       }
       else{
+        warn('playCurrent: unknown provider, using link fallback', item && item.url);
         // Unknown provider: open as a plain link
         container.innerHTML = `<div class="yt-placeholder" style="display:grid;place-items:center;height:100%">`+
           `<a href="${item.url}" target="_blank" rel="noopener">Open track in new tab</a>`+
           `</div>`;
         const secs = parseDurationToSec(item.durationSec, 240, 20); const maxMs = secs * 1000;
-        state.rumbleTimer = setTimeout(() => nextTrack(), maxMs);
+        log('Unknown provider: setting fallback timeout', { secs });
+        state.rumbleTimer = setTimeout(() => { log('Unknown provider: fallback timeout fired'); nextTrack(); }, maxMs);
       }
 
       updateStatus(`Playing ${state.index+1}/${state.queue.length}`);
@@ -764,7 +953,7 @@
         events: {
           onReady: e => { try{ e.target.playVideo(); }catch(_){} },
           onStateChange: e => {
-            if(e.data === YT.PlayerState.ENDED){ nextTrack(); }
+            if(e.data === YT.PlayerState.ENDED){ log('YouTube: ended, advancing'); nextTrack(); }
           }
         }
       });
