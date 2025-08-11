@@ -342,26 +342,26 @@
     ];
 
     const SHIPS = [
-      'star-citizen-wing-commander-vehicle-industry-spacecraft-star_1167x681.png',
-      'combat_spaceship_3081x1321.png',
-      'distant_spacestation_640x423.png',
-      'hornet-star-citizen-spacecraft-anvil-tool_1268x390.png',
-      'ship-aegis-star-citizen-frigate-f-t-w-w-w-star_3449x2110.png',
-      'ship-sky-vehicle-star-citizen-italy-star_2500x1337.png',
-      'spacecraft-interplanetary-spaceflight-star-citizen-information-interstellar-medium-star_1134x450.png',
-      'star-citizen-cargo-ship-cloud-imperium-games-transport_1181x508.png',
-      'star-citizen-centauri-alliance-game_1200x800.png',
-      'star-citizen-cloud-imperium-games-aurora-ign_709x372.png',
-      'star-citizen-cloud-imperium-games-gamescom-constellation-star_709x385.png',
-      'star-citizen-cloud-imperium-games-youtube_1502x753.png',
-      'star-citizen-corvette-ship-civilian-navy-star_9000x2527.png',
-      'star-citizen-gamescom-ship-youtube-space-cargo_2373x674.png',
-      'star-citizen-hawk-hildesheim-holzminden-goettingen-cloud-imperium-games-ship-reddit-star_1210x731.png',
-      'star-citizen-polaris-industries-cloud-imperium-games-ship-side-by-side_1401x856.png',
-      'star-citizen-spacecraft-cloud-imperium-games_773x345.png',
-      'star-citizen-spacecraft-starship-battlestar-star_1024x906.png',
-      'star-citizen-transport-hangar-vehicle-ship-star_1920x1080.png',
-      'star-citizen-tropical-cyclone-forecast-model-cloud-imperium-games-spacecraft-star_2629x1286.png'
+      'star-citizen-wing-commander-vehicle-industry-spacecraft-star_1167x681_RL.png',
+      'combat_spaceship_3081x1321_RL.png',
+      'distant_spacestation_640x423_LR.png',
+      'hornet-star-citizen-spacecraft-anvil-tool_1268x390_RL.png',
+      'ship-aegis-star-citizen-frigate-f-t-w-w-w-star_3449x2110_LR.png',
+      'ship-sky-vehicle-star-citizen-italy-star_2500x1337_RL.png',
+      'spacecraft-interplanetary-spaceflight-star-citizen-information-interstellar-medium-star_1134x450_LR.png',
+      'star-citizen-cargo-ship-cloud-imperium-games-transport_1181x508_LR.png',
+      'star-citizen-centauri-alliance-game_1200x800_RL.png',
+      'star-citizen-cloud-imperium-games-aurora-ign_709x372_RL.png',
+      'star-citizen-cloud-imperium-games-gamescom-constellation-star_709x385_RL.png',
+      'star-citizen-cloud-imperium-games-youtube_1502x753_RL.png',
+      'star-citizen-corvette-ship-civilian-navy-star_9000x2527_LR.png',
+      'star-citizen-gamescom-ship-youtube-space-cargo_2373x674_LR.png',
+      'star-citizen-hawk-hildesheim-holzminden-goettingen-cloud-imperium-games-ship-reddit-star_1210x731_LR.png',
+      'star-citizen-polaris-industries-cloud-imperium-games-ship-side-by-side_1401x856_RL.png',
+      'star-citizen-spacecraft-cloud-imperium-games_773x345_LR.png',
+      'star-citizen-spacecraft-starship-battlestar-star_1024x906_LR.png',
+      'star-citizen-transport-hangar-vehicle-ship-star_1920x1080_LR.png',
+      'star-citizen-tropical-cyclone-forecast-model-cloud-imperium-games-spacecraft-star_2629x1286_LR.png'
     ].map(n => MEDIA_PATH + n);
 
     // Fallback playlists (used only if fetching /playlists/* fails)
@@ -502,12 +502,15 @@
 
     function spawnSprite(){
       const img = document.createElement('img');
-      img.src = pick(SHIPS);
+      const chosen = pick(SHIPS);
+      img.src = chosen;
       img.className = 'sprite';
-      const fromLeft = Math.random() < 0.5;
+      // Orientation from filename suffix: _LR.png or _RL.png
+      const m = chosen.match(/_(LR|RL)\.png$/i);
+      const orientation = m ? m[1].toUpperCase() : (Math.random() < 0.5 ? 'LR' : 'RL');
+      const fromLeft = orientation === 'LR';
       const startX = fromLeft ? '-25vw' : '125vw';
       const endX   = fromLeft ? '125vw' : '-25vw';
-      if(!fromLeft) img.classList.add('flip');
 
       const topVh = Math.random()*80 + 5; // 5–85vh
       const scale = Math.random()*0.6 + 0.4; // 0.4–1.0
