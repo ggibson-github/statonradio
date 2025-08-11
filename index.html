@@ -499,8 +499,13 @@
     }
 
     const spriteLayer = document.getElementById('spriteLayer');
+    const MAX_SPRITES = 2; // limit concurrent drifting ships
 
     function spawnSprite(){
+      // Respect concurrent sprite limit
+      if(spriteLayer.querySelectorAll('.sprite').length >= MAX_SPRITES){
+        return;
+      }
       const img = document.createElement('img');
       const chosen = pick(SHIPS);
       img.src = chosen;
@@ -531,9 +536,10 @@
     }
 
     function startSprites(){
-      // Seed a few immediately
-      for(let i=0;i<4;i++) setTimeout(spawnSprite, i*1500);
-      setInterval(spawnSprite, 6000 + Math.random()*6000);
+      // Seed up to MAX_SPRITES immediately
+      for(let i=0;i<MAX_SPRITES;i++) setTimeout(spawnSprite, i*1200);
+      // Periodically attempt to spawn if under the cap
+      setInterval(() => { spawnSprite(); }, 7000);
     }
 
     // ─────────────────────────────────────────────────────────────────────
