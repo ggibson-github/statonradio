@@ -594,7 +594,8 @@
       rumbleVideoObserver: null,
       rumbleVideoEl: null,
       rumbleNudge: null,
-      started: false
+      started: false,
+      advanceScheduled: false
     };
 
     async function loadManifest(){
@@ -701,6 +702,7 @@
       if(state.rumbleVideoObserver){ try{ state.rumbleVideoObserver.disconnect(); }catch(_){} state.rumbleVideoObserver = null; }
       state.rumbleVideoEl = null;
       if(state.rumbleNudge){ try{ clearInterval(state.rumbleNudge); }catch(_){} state.rumbleNudge = null; }
+      state.advanceScheduled = false;
     }
 
     function playCurrent(){
@@ -791,9 +793,11 @@
                           }
                         }, { once:true });
                         v.addEventListener('ended', () => {
-                          log('Rumble Native: ended -> advancing');
-                          clearRumbleTimers();
-                          nextTrack();
+                          if(!state.advanceScheduled){
+                            state.advanceScheduled = true;
+                            log('Rumble Native: ended -> scheduling advance');
+                            setTimeout(() => { clearRumbleTimers(); nextTrack(); }, 1200);
+                          }
                         }, { once:true });
                         // Try to nudge autoplay in case the player pauses on load
                         const nudgePlay = async () => { try{ if(v.paused) await v.play(); }catch(_){} };
@@ -856,13 +860,21 @@
                         // Heartbeat roughly every ~5s
                         sampleTick = (sampleTick + 1) % Math.max(1, Math.round(4000 / pollMs));
                         if(sampleTick === 0) log('Rumble: progress', { current, duration });
-                        // near-end threshold + stall detection
-                        const nearEndMargin = 2.0; // seconds (closer to exact end)
-                        const stallMs = 2500; // small grace near end before skipping on stall
-                        if(current >= duration - nearEndMargin || (current > 0 && (Date.now() - lastProgressTs) > stallMs && current >= duration - nearEndMargin - 0.5)){
-                          clearRumbleTimers();
-                          log('Rumble: near-end detected, advancing', { current, duration });
-                          nextTrack();
+                        // Exact-end preference: do not skip early. Schedule advance after end.
+                        const endDelta = duration - current;
+                        const stallMs = 5000; // only consider stall very near end
+                        if(endDelta <= 0.05){ // effectively at end
+                          if(!state.advanceScheduled){
+                            state.advanceScheduled = true;
+                            log('Rumble: end reached, scheduling next');
+                            setTimeout(() => { clearRumbleTimers(); nextTrack(); }, 1200);
+                          }
+                        } else if(endDelta <= 0.5 && (Date.now() - lastProgressTs) > stallMs){
+                          if(!state.advanceScheduled){
+                            state.advanceScheduled = true;
+                            log('Rumble: near-end stall, scheduling next');
+                            setTimeout(() => { clearRumbleTimers(); nextTrack(); }, 1200);
+                          }
                         }
                       }
                     }catch(err){ warn('Rumble JS: poll error', err); }
@@ -887,7 +899,7 @@
           // Fallback auto-advance using provided duration
           const secs = parseDurationToSec(item.durationSec, 300, 30); const maxMs = secs * 1000;
           log('Rumble JS: setting fallback timeout', { secs });
-          state.rumbleTimer = setTimeout(() => { updateStatus('Advancing (timeout)…'); log('Rumble JS: fallback timeout fired'); nextTrack(); }, maxMs);
+          state.rumbleTimer = setTimeout(() => { updateStatus('Advancing (timeout)…'); log('Rumble JS: fallback timeout fired'); nextTrack(); }, maxMs + 1500);
         } else {
           // Default iframe embed
           const iframe = document.createElement('iframe');
@@ -897,7 +909,7 @@
           container.appendChild(iframe);
           const secs = parseDurationToSec(item.durationSec, 300, 30); const maxMs = secs * 1000; // default 5 min
           log('Rumble iframe: setting fallback timeout', { secs });
-          state.rumbleTimer = setTimeout(() => { updateStatus('Advancing (timeout)…'); log('Rumble iframe: fallback timeout fired'); nextTrack(); }, maxMs);
+          state.rumbleTimer = setTimeout(() => { updateStatus('Advancing (timeout)…'); log('Rumble iframe: fallback timeout fired'); nextTrack(); }, maxMs + 1500);
         }
       }
       else if(provider === 'rumblePage'){
@@ -922,7 +934,7 @@
 
         const secs = parseDurationToSec(item.durationSec, 300, 30); const maxMs = secs * 1000; // time out to advance
         log('Rumble page: setting fallback timeout', { secs });
-        state.rumbleTimer = setTimeout(() => { updateStatus('Advancing (timeout)…'); log('Rumble page: fallback timeout fired'); nextTrack(); }, maxMs);
+        state.rumbleTimer = setTimeout(() => { updateStatus('Advancing (timeout)…'); log('Rumble page: fallback timeout fired'); nextTrack(); }, maxMs + 1500);
       }
       else{
         warn('playCurrent: unknown provider, using link fallback', item && item.url);
@@ -932,7 +944,7 @@
           `</div>`;
         const secs = parseDurationToSec(item.durationSec, 240, 20); const maxMs = secs * 1000;
         log('Unknown provider: setting fallback timeout', { secs });
-        state.rumbleTimer = setTimeout(() => { log('Unknown provider: fallback timeout fired'); nextTrack(); }, maxMs);
+        state.rumbleTimer = setTimeout(() => { log('Unknown provider: fallback timeout fired'); nextTrack(); }, maxMs + 1500);
       }
 
       updateStatus(`Playing ${state.index+1}/${state.queue.length}`);
