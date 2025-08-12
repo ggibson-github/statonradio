@@ -856,10 +856,10 @@
                         // Heartbeat roughly every ~5s
                         sampleTick = (sampleTick + 1) % Math.max(1, Math.round(4000 / pollMs));
                         if(sampleTick === 0) log('Rumble: progress', { current, duration });
-                        // aggressive near-end threshold + stall detection
-                        const nearEndMargin = 6.0; // seconds
-                        const stallMs = 2000; // if no progress for ~2s near end, advance
-                        if(current >= duration - nearEndMargin || (current > 0 && (Date.now() - lastProgressTs) > stallMs && current >= duration - nearEndMargin - 2)){
+                        // near-end threshold + stall detection
+                        const nearEndMargin = 2.0; // seconds (closer to exact end)
+                        const stallMs = 2500; // small grace near end before skipping on stall
+                        if(current >= duration - nearEndMargin || (current > 0 && (Date.now() - lastProgressTs) > stallMs && current >= duration - nearEndMargin - 0.5)){
                           clearRumbleTimers();
                           log('Rumble: near-end detected, advancing', { current, duration });
                           nextTrack();
