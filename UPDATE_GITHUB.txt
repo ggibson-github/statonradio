@@ -13,7 +13,6 @@ Stanton Radio — How to update GitHub (PowerShell)
      git add -A
    - Or specific files (use quotes if path has spaces):
      git add "playlists/delnorin.json"
-     git add "playlists/delnorin copy.json"
 
 5) Commit with a clear message
    git commit -m "Describe what you changed"

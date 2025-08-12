@@ -634,9 +634,10 @@
       }
     }
 
-    function reshuffleQueue(){
+    function setQueue(shuffleIt = false){
       if(!state.currentPlaylist || !Array.isArray(state.currentPlaylist.items)) return;
-      state.queue = shuffle(state.currentPlaylist.items.slice());
+      const items = state.currentPlaylist.items.slice();
+      state.queue = shuffleIt ? shuffle(items) : items;
       state.index = -1;
       updateStatus(`Loaded ${state.queue.length} tracks from \u201C${state.currentPlaylist.title || state.currentPlaylist.id}\u201D`);
       $('#playlistName').textContent = state.currentPlaylist.title || state.currentPlaylist.id;
@@ -674,7 +675,7 @@
         // fall back to pre‑inlined
         await loadPlaylist(null);
       }
-      reshuffleQueue();
+      setQueue(false);
     }
 
     function nextTrack(){
@@ -1005,7 +1006,7 @@
     document.getElementById('startBtn').addEventListener('click', startApp, {once:true});
     document.getElementById('nextBtn').addEventListener('click', () => nextTrack());
     document.getElementById('prevBtn').addEventListener('click', () => prevTrack());
-    document.getElementById('shuffleBtn').addEventListener('click', () => { reshuffleQueue(); nextTrack(); });
+    document.getElementById('shuffleBtn').addEventListener('click', () => { setQueue(true); nextTrack(); });
     document.getElementById('reloadBtn').addEventListener('click', async () => { await pickRandomPlaylist(); nextTrack(); });
     document.getElementById('downloadBtn').addEventListener('click', () => downloadCurrentPlaylist());
 
@@ -1018,7 +1019,7 @@
     window.addEventListener('keydown', e => {
       if(e.key === 'ArrowRight') nextTrack();
       if(e.key === 'ArrowLeft') prevTrack();
-      if(e.key.toLowerCase() === 's') { reshuffleQueue(); nextTrack(); }
+      if(e.key.toLowerCase() === 's') { setQueue(true); nextTrack(); }
     });
 
     // ─────────────────────────────────────────────────────────────────────
