@@ -1,0 +1,39 @@
+Stanton Radio — How to update GitHub (PowerShell)
+
+1) Pull the latest (recommended)
+   git pull origin main
+
+2) Make your edits to files
+
+3) See what changed
+   git status
+
+4) Stage changes
+   - Everything:
+     git add -A
+   - Or specific files (use quotes if path has spaces):
+     git add "playlists/delnorin.json"
+     git add "playlists/delnorin copy.json"
+
+5) Commit with a clear message
+   git commit -m "Describe what you changed"
+
+6) Push to GitHub
+   git push origin main
+
+PowerShell tips:
+- Chain commands with semicolons, e.g.:
+  git add -A; git commit -m "Update"; git push origin main
+- If asked for credentials, sign in with your GitHub account/token.
+
+Common fixes:
+- Unstage a file:
+  git restore --staged <path>
+- Discard changes to a file (dangerous):
+  git restore <path>
+- Throw away all local changes since last commit (very dangerous):
+  git reset --hard HEAD
+
+Check remotes/branch:
+- Current branch: git branch
+- Remotes: git remote -v
