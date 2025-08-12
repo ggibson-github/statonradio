@@ -261,6 +261,7 @@
         </div>
         <div class="control-group">
           <button id="reloadBtn" title="Pick a new random playlist">🎲 New Playlist</button>
+          <button id="downloadBtn" title="Download current playlist JSON">⬇️ List</button>
         </div>
         <div id="status" class="status">Loading playlists…</div>
       </div>
@@ -617,12 +618,12 @@
         if(!res.ok) throw new Error('playlist fetch failed');
         const data = await res.json();
         const id = filename.replace(/\.json$/,'');
-        state.currentPlaylist = { id, ...data };
+        state.currentPlaylist = { id, __sourceFile: filename, __raw: data, ...data };
         return state.currentPlaylist;
       }catch(err){
         console.warn('Playlist load failed, falling back', err);
         const pl = pick(INLINED_PLAYLISTS);
-        state.currentPlaylist = {...pl, id: pl.id || 'inline'};
+        state.currentPlaylist = { ...pl, id: pl.id || 'inline', __sourceFile: null, __raw: pl };
         return state.currentPlaylist;
       }
     }
@@ -932,6 +933,25 @@
 
     function updateStatus(msg){ document.getElementById('status').textContent = msg; }
 
+    // Download currently loaded playlist JSON
+    function downloadCurrentPlaylist(){
+      const pl = state.currentPlaylist;
+      if(!pl){ return; }
+      // Prefer original fetched data if available
+      const payload = pl.__raw ? pl.__raw : {
+        title: pl.title,
+        logo: pl.logo,
+        items: Array.isArray(pl.items) ? pl.items : []
+      };
+      const json = JSON.stringify(payload, null, 2);
+      const blob = new Blob([json], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const fname = (pl.__sourceFile || (pl.id ? pl.id+'.json' : 'playlist.json')).replace(/[^a-z0-9._-]/gi,'_');
+      a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // YOUTUBE PLAYER CREATION + END HANDLING
     // ─────────────────────────────────────────────────────────────────────
@@ -979,6 +999,7 @@
     document.getElementById('prevBtn').addEventListener('click', () => prevTrack());
     document.getElementById('shuffleBtn').addEventListener('click', () => { reshuffleQueue(); nextTrack(); });
     document.getElementById('reloadBtn').addEventListener('click', async () => { await pickRandomPlaylist(); nextTrack(); });
+    document.getElementById('downloadBtn').addEventListener('click', () => downloadCurrentPlaylist());
 
     // If the tab becomes hidden for a while, gently throttle ship spawns (optional)
     document.addEventListener('visibilitychange', () => {
@@ -995,10 +1016,25 @@
     // ─────────────────────────────────────────────────────────────────────
     // DOCKING: shrink card to a tall, thin sidebar on left or right
     // ─────────────────────────────────────────────────────────────────────
+    function isPhoneSized(){
+      try{
+        // Treat small viewports and most touch-first phones as "phone-sized"
+        return (
+          window.matchMedia('(max-width: 640px)').matches ||
+          window.matchMedia('(pointer: coarse) and (max-width: 768px)').matches
+        );
+      }catch(_){
+        return Math.min(window.innerWidth || 0, window.innerHeight || 0) <= 640;
+      }
+    }
     const cardEl = document.querySelector('.card');
     const dockBtn = document.getElementById('dockBtn');
     let dockSide = (typeof localStorage !== 'undefined' && localStorage.getItem('dockSide')) || 'right';
     let dockState = (typeof localStorage !== 'undefined' && localStorage.getItem('dockState')) || 'docked';
+    // On phone/phone-sized viewports, prefer expanded view by default
+    if(isPhoneSized()){
+      dockState = 'expanded';
+    }
 
     function updateDockUi(){
       const is = cardEl.classList.contains('docked');
