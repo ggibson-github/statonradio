@@ -3,8 +3,47 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Stanton Radio — Star Citizen Spacewave</title>
-  <meta name="description" content="A sci‑fi themed, animated space radio station that plays randomized video playlists from JSON files on a GitHub Pages static site." />
+  <title>Star Citizen Radio | Stanton Radio – Live Spacewave</title>
+  <meta name="description" content="Listen to Star Citizen radio on Stanton Radio — a live, sci‑fi spacewave station with animated deep‑space visuals and curated, randomized playlists. Launch and listen now." />
+  <link rel="canonical" href="https://stantonradio.com/">
+  <meta property="og:title" content="Star Citizen Radio | Stanton Radio – Live Spacewave">
+  <meta property="og:description" content="Listen to Star Citizen radio — live spacewave mixes with animated deep‑space visuals.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://stantonradio.com/">
+  <meta property="og:image" content="https://stantonradio.com/media/star-citizen-transport-hangar-vehicle-ship-star_1920x1080.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://www.youtube.com">
+  <link rel="preconnect" href="https://i.ytimg.com">
+  <link rel="preconnect" href="https://rumble.com">
+  <link rel="dns-prefetch" href="//www.youtube.com">
+  <link rel="dns-prefetch" href="//i.ytimg.com">
+  <link rel="dns-prefetch" href="//rumble.com">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "name": "Star Citizen Radio | Stanton Radio",
+    "url": "https://stantonradio.com/",
+    "description": "Listen to Star Citizen radio — a live spacewave station with animated visuals and curated, randomized playlists.",
+    "inLanguage": "en",
+    "isPartOf": {
+      "@type": "WebSite",
+      "name": "Stanton Radio",
+      "url": "https://stantonradio.com/"
+    }
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {"@type":"Question","name":"What is Stanton Radio?","acceptedAnswer":{"@type":"Answer","text":"A fan‑run Star Citizen radio station streaming spacewave mixes with animated deep‑space visuals."}},
+      {"@type":"Question","name":"How do I listen?","acceptedAnswer":{"@type":"Answer","text":"Tap \"Launch Station\" to start the player, then use Next/Shuffle to explore playlists."}},
+      {"@type":"Question","name":"Is this official?","acceptedAnswer":{"@type":"Answer","text":"No. This Star Citizen radio is a community project and not affiliated with CIG."}}
+    ]
+  }
+  </script>
   <style>
     /*
       ──────────────────────────────────────────────────────────────────────
@@ -204,9 +243,37 @@
       .controls{flex-wrap:wrap}
       .status{width:100%;text-align:center;margin-top:6px}
     }
+
+    /* Lightweight info overlay (outside radio panel) */
+    .info-overlay{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:10;max-width:min(820px, 92vw);}
+    .info-box{background:var(--glass);border:1px solid var(--glassBorder);border-radius:14px;padding:10px 12px;backdrop-filter:saturate(120%) blur(6px);color:#c8d4ff;font-size:14px;line-height:1.35}
+    .info-actions{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:6px}
+    .info-title{margin:0;font-size:15px;color:var(--text);font-weight:700}
+    .info-dismiss{appearance:none;border:1px solid var(--glassBorder);background:var(--glass);color:var(--text);padding:6px 10px;border-radius:10px;cursor:pointer}
+    .info-dismiss:hover{border-color:var(--accent)}
+    .info-box details{margin-top:6px}
+    .info-box summary{cursor:pointer;color:var(--text)}
   </style>
 </head>
-<body>
+  <body>
+  <!-- TOP INFO OVERLAY (outside the radio panel) -->
+  <div id="infoOverlay" class="info-overlay" role="region" aria-label="About Stanton Radio">
+    <div class="info-box">
+      <div class="info-actions">
+        <h2 class="info-title">Star Citizen Radio — Stanton Radio</h2>
+        <button class="info-dismiss" aria-label="Dismiss info" onclick="try{window.dismissOverlayOnce && window.dismissOverlayOnce()}catch(_){}">Hide</button>
+      </div>
+      <div>
+        Stanton Radio is a Star Citizen radio experience: spacewave, ambient and cinematic tracks from community creators, mixed into a continuous, in‑verse broadcast. Launch the station to explore randomized playlists, discover artists, and make the ‘verse your soundscape.
+      </div>
+      <details>
+        <summary>FAQ</summary>
+        <p><strong>What is Stanton Radio?</strong> A fan‑run Star Citizen radio station streaming spacewave mixes with animated deep‑space visuals.</p>
+        <p><strong>How do I listen?</strong> Tap “Launch Station” to start the player, then use Next/Shuffle to explore playlists.</p>
+        <p><strong>Is this official?</strong> No. This Star Citizen radio is a community project and not affiliated with CIG.</p>
+      </details>
+    </div>
+  </div>
   <!-- BACKGROUND SKY -->
   <div id="sky" aria-hidden="true">
     <div class="stars"></div>
@@ -233,7 +300,7 @@
     <section class="card" aria-live="polite">
       <header class="card-header">
         <div class="title-row">
-          <h1>Stanton Radio</h1>
+          <h1>Star Citizen Radio — Stanton Radio</h1>
           <span class="badge">Live Mix</span>
           <span class="neon-signal" aria-hidden="true" title="On‑air">
             <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -1050,6 +1117,20 @@
     }
     const cardEl = document.querySelector('.card');
     const dockBtn = document.getElementById('dockBtn');
+    const infoOverlay = document.getElementById('infoOverlay');
+    let overlayTempHidden = false;
+    let lastDocked = null;
+
+    function setOverlayVisible(show){
+      try{ if(infoOverlay) infoOverlay.style.display = show ? '' : 'none'; }catch(_){ }
+    }
+    function updateOverlayForDock(isDocked){
+      if(lastDocked !== isDocked){ overlayTempHidden = false; }
+      if(isDocked){ setOverlayVisible(!overlayTempHidden); }
+      else { setOverlayVisible(false); }
+      lastDocked = isDocked;
+    }
+    window.dismissOverlayOnce = function(){ overlayTempHidden = true; setOverlayVisible(false); };
     let dockSide = (typeof localStorage !== 'undefined' && localStorage.getItem('dockSide')) || 'right';
     let dockState = (typeof localStorage !== 'undefined' && localStorage.getItem('dockState')) || 'docked';
     // On phone/phone-sized viewports, prefer expanded view by default
@@ -1078,12 +1159,14 @@
       dockSide = s;
       try{ localStorage.setItem('dockSide', dockSide); localStorage.setItem('dockState','docked'); }catch(_){}
       updateDockUi();
+      try{ updateOverlayForDock(true); }catch(_){}
     }
 
     function undock(){
       cardEl.classList.remove('docked','dock-left','dock-right');
       try{ localStorage.setItem('dockState','expanded'); }catch(_){}
       updateDockUi();
+      try{ updateOverlayForDock(false); }catch(_){}
     }
 
     dockBtn.addEventListener('click', (e) => {
@@ -1113,6 +1196,7 @@
       dock(dockSide || 'right');
     } else {
       updateDockUi();
+      try{ updateOverlayForDock(false); }catch(_){}
     }
   </script>
 </body>
