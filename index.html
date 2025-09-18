@@ -230,6 +230,10 @@
     .drawer-item.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(82,255,227,.15) inset}
     .drawer-section-title{display:block;padding:8px 10px;margin:4px 4px 6px;border-radius:10px;background:var(--glass);border:1px solid var(--glassBorder);font-weight:700;font-size:13px;color: rgba(57,255,20,.85)}
     .drawer-scrim{position:absolute;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(1px);opacity:0;transition:opacity 200ms ease;z-index:4}
+    /* Simple styling for drawer search */
+    .drawer-search{width:160px;max-width:40vw;padding:8px 10px;border-radius:10px;border:1px solid var(--glassBorder);background:var(--glass);color:var(--text)}
+    .drawer-search:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(82,255,227,.15) inset}
+    .drawer-item.search-hit{border-color:var(--accent);box-shadow:0 0 0 2px rgba(82,255,227,.25) inset}
     .drawer-scrim.visible{opacity:1}
     @media (max-width:640px){ .drawer{width:100%} }
 
@@ -363,6 +367,7 @@
             <h3 id="drawerTitle" class="drawer-title">Playlists</h3>
           </div>
           <div class="control-group">
+            <input id="drawerSearch" class="drawer-search" type="search" placeholder="Search…" aria-label="Search playlists and items" />
             <button id="randomPlBtn" title="Pick a random playlist">🎲 Random</button>
             <button id="closeDrawerBtn" title="Close">✕</button>
           </div>
@@ -1340,6 +1345,8 @@
         items.forEach((it, idx) => {
           const btn = document.createElement('button');
           btn.className = 'drawer-item';
+          // index searchable text: playlist title + item title + url
+          try{ btn.dataset.search = `${(pl.title||'')} ${(it && it.title)||''} ${(it && it.url)||''}`.toLowerCase(); }catch(_){ }
           const safeTitle = it && (it.title || it.url) || `Item ${idx+1}`;
           btn.innerHTML = `<span>${safeTitle}</span><span class=\"meta\">${it.url? '': ''}</span>`;
           btn.addEventListener('click', async () => {
@@ -1410,6 +1417,30 @@
     if(closeDrawerBtn) closeDrawerBtn.addEventListener('click', () => closeDrawer());
     if(scrim) scrim.addEventListener('click', () => closeDrawer());
     if(drawerBackBtn) drawerBackBtn.addEventListener('click', async () => { await buildFullCatalog(); });
+    // Drawer search: scroll to first matching item; preserve existing active highlight
+    const drawerSearch = document.getElementById('drawerSearch');
+    if(drawerSearch){
+      const doSearch = () => {
+        try{
+          const q = String(drawerSearch.value || '').trim().toLowerCase();
+          // clear prior search-hit markers only (keep .active highlights intact)
+          listEl.querySelectorAll('.drawer-item.search-hit').forEach(el => el.classList.remove('search-hit'));
+          if(!q){ return; }
+          const items = Array.from(listEl.querySelectorAll('.drawer-item'));
+          const first = items.find(el => {
+            const s = (el.dataset && el.dataset.search) || '';
+            return s.includes(q);
+          });
+          if(first){
+            first.classList.add('search-hit');
+            // ensure the matching element is scrolled into view within the drawer body
+            try{ first.scrollIntoView({ block: 'center', behavior: 'smooth' }); }catch(_){ first.scrollIntoView(); }
+          }
+        }catch(_){ }
+      };
+      drawerSearch.addEventListener('input', doSearch);
+      drawerSearch.addEventListener('change', doSearch);
+    }
     if(randomPlBtn) randomPlBtn.addEventListener('click', async () => {
       await pickRandomPlaylist();
       const count = Array.isArray(state.queue) ? state.queue.length : 0;
