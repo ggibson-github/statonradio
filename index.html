@@ -159,7 +159,7 @@
     /* Center stage */
     main{position:relative;z-index:1;display:grid;place-items:center;height:100dvh;height:100svh;overflow:hidden;padding:4vmin}
 
-    .card{width:min(980px, 90vw, calc((100svh - 8vmin - var(--cardChrome)) * 16 / 9));max-height:calc(100svh - 8vmin);display:flex;flex-direction:column;min-height:0;backdrop-filter: blur(8px);
+    .card{position:relative;width:min(980px, 90vw, calc((100svh - 8vmin - var(--cardChrome)) * 16 / 9));max-height:calc(100svh - 8vmin);display:flex;flex-direction:column;min-height:0;backdrop-filter: blur(8px);
       background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
       border:1px solid var(--glassBorder);border-radius:24px;box-shadow:0 30px 50px rgba(0,0,0,.5);
       overflow:hidden
@@ -216,6 +216,22 @@
     button{appearance:none;border:1px solid var(--glassBorder);background:var(--glass);color:var(--text);padding:10px 14px;border-radius:12px;font-weight:600;cursor:pointer}
     button:hover{border-color:var(--accent);box-shadow:0 0 0 2px rgba(82,255,227,.15) inset}
     .status{font-size:12px;color:var(--muted)}
+
+    /* In-panel slide-out playlist drawer */
+    .drawer{position:absolute;top:0;right:0;bottom:0;width:clamp(260px, 38vw, 420px);background:linear-gradient(180deg, rgba(255,255,255,.20), rgba(255,255,255,.10));
+      border-left:1px solid var(--glassBorder);box-shadow:-20px 0 30px rgba(0,0,0,.35);transform:translateX(100%);transition:transform 240ms ease;z-index:5;display:flex;flex-direction:column}
+    .drawer.open{transform:translateX(0)}
+    .drawer-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--glassBorder);background:linear-gradient(180deg, rgba(82,255,227,.10), transparent 70%)}
+    .drawer-title{margin:0;font-size:16px}
+    .drawer-body{padding:10px 8px 16px;overflow:auto;min-height:0}
+    .drawer-list{display:flex;flex-direction:column;gap:8px}
+    .drawer-item{display:flex;align-items:center;justify-content:space-between;width:100%;text-align:left}
+    .drawer-item .meta{font-size:11px;color:var(--muted)}
+    .drawer-item.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(82,255,227,.15) inset}
+    .drawer-section-title{display:block;padding:8px 10px;margin:4px 4px 6px;border-radius:10px;background:var(--glass);border:1px solid var(--glassBorder);font-weight:700;font-size:13px;color: rgba(57,255,20,.85)}
+    .drawer-scrim{position:absolute;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(1px);opacity:0;transition:opacity 200ms ease;z-index:4}
+    .drawer-scrim.visible{opacity:1}
+    @media (max-width:640px){ .drawer{width:100%} }
 
     /* Floating translucent dock button (when not placed in header flow) */
     .dock-toggle{backdrop-filter:saturate(120%) blur(6px)}
@@ -333,11 +349,28 @@
           <button id="shuffleBtn" title="Reshuffle playlist">🔀 Shuffle</button>
         </div>
         <div class="control-group">
-          <button id="reloadBtn" title="Pick a new random playlist">🎲 New Playlist</button>
+          <button id="reloadBtn" title="Browse and choose a playlist">📜 Playlists</button>
           <button id="downloadBtn" title="Download current playlist JSON">⬇️ List</button>
         </div>
         <div id="status" class="status">Loading playlists…</div>
       </div>
+      <!-- Drawer scrim and panel (inside card so it overlays the player UI) -->
+      <div id="drawerScrim" class="drawer-scrim" hidden></div>
+      <aside id="playlistDrawer" class="drawer" aria-hidden="true" aria-label="Playlists">
+        <div class="drawer-header">
+          <div class="control-group">
+            <button id="drawerBackBtn" title="Back to playlists" style="display:none">←</button>
+            <h3 id="drawerTitle" class="drawer-title">Playlists</h3>
+          </div>
+          <div class="control-group">
+            <button id="randomPlBtn" title="Pick a random playlist">🎲 Random</button>
+            <button id="closeDrawerBtn" title="Close">✕</button>
+          </div>
+        </div>
+        <div class="drawer-body">
+          <div id="playlistList" class="drawer-list" role="list"></div>
+        </div>
+      </aside>
     </section>
   </main>
 
@@ -662,7 +695,9 @@
       rumbleVideoEl: null,
       rumbleNudge: null,
       started: false,
-      advanceScheduled: false
+      advanceScheduled: false,
+      playlistMeta: {},
+      playlistCache: {}
     };
 
     async function loadManifest(){
@@ -744,6 +779,33 @@
         await loadPlaylist(null);
       }
       setQueue(false);
+    }
+
+    async function playFirstFromFirstPlaylist(){
+      try{
+        if(state.manifest && Array.isArray(state.manifest.playlists) && state.manifest.playlists.length){
+          const first = state.manifest.playlists[0];
+          updateStatus('Loading first playlist…');
+          await loadPlaylist(first);
+          setQueue(false);
+          if(state.queue && state.queue.length){
+            state.index = 0;
+            playCurrent();
+            return true;
+          }
+        } else if(Array.isArray(INLINED_PLAYLISTS) && INLINED_PLAYLISTS.length){
+          const pl = INLINED_PLAYLISTS[0];
+          state.currentPlaylist = { ...pl, id: pl.id || 'inline' };
+          setQueue(false);
+          if(state.queue && state.queue.length){
+            state.index = 0;
+            playCurrent();
+            return true;
+          }
+        }
+      }catch(_){ }
+      updateStatus('No playlist items found.');
+      return false;
     }
 
     function nextTrack(){
@@ -1077,16 +1139,16 @@
       }
 
       const list = await loadManifest();
-      if(list && list.length){ updateStatus('Loaded manifest. Choosing a playlist…'); }
-      await pickRandomPlaylist();
-      nextTrack();
+      if(list && list.length){ updateStatus('Loaded manifest. Loading first playlist…'); }
+      await playFirstFromFirstPlaylist();
+      try{ await ensurePlaylistListBuilt(); }catch(_){ }
     }
 
     document.getElementById('startBtn').addEventListener('click', startApp, {once:true});
     document.getElementById('nextBtn').addEventListener('click', () => nextTrack());
     document.getElementById('prevBtn').addEventListener('click', () => prevTrack());
     document.getElementById('shuffleBtn').addEventListener('click', () => { setQueue(true); nextTrack(); });
-    document.getElementById('reloadBtn').addEventListener('click', async () => { await pickRandomPlaylist(); nextTrack(); });
+    document.getElementById('reloadBtn').addEventListener('click', () => { openDrawer(); });
     document.getElementById('downloadBtn').addEventListener('click', () => downloadCurrentPlaylist());
 
     // If the tab becomes hidden for a while, gently throttle ship spawns (optional)
@@ -1198,6 +1260,169 @@
       updateDockUi();
       try{ updateOverlayForDock(false); }catch(_){}
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // PLAYLIST DRAWER: browse and choose specific playlist
+    // ─────────────────────────────────────────────────────────────────────
+    const drawer = document.getElementById('playlistDrawer');
+    const scrim = document.getElementById('drawerScrim');
+    const listEl = document.getElementById('playlistList');
+    const closeDrawerBtn = document.getElementById('closeDrawerBtn');
+    const randomPlBtn = document.getElementById('randomPlBtn');
+    const drawerBackBtn = document.getElementById('drawerBackBtn');
+    const drawerTitle = document.getElementById('drawerTitle');
+    let drawerMode = 'catalog'; // 'catalog' | 'items'
+
+    function setDrawerOpen(isOpen){
+      try{
+        drawer.classList.toggle('open', !!isOpen);
+        drawer.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+        if(scrim){
+          if(isOpen){ scrim.removeAttribute('hidden'); scrim.classList.add('visible'); }
+          else { scrim.classList.remove('visible'); scrim.setAttribute('hidden',''); }
+        }
+      }catch(_){ }
+    }
+    function openDrawer(){ buildFullCatalog().finally(() => setDrawerOpen(true)); }
+    function closeDrawer(){ setDrawerOpen(false); }
+
+    function setDrawerMode(mode, title){
+      drawerMode = mode;
+      if(drawerBackBtn){ drawerBackBtn.style.display = mode === 'items' ? '' : 'none'; }
+      if(drawerTitle){ drawerTitle.textContent = title || (mode === 'items' ? (state.currentPlaylist && (state.currentPlaylist.title || state.currentPlaylist.id) || 'Playlist') : 'Playlists'); }
+    }
+
+    async function ensurePlaylistListBuilt(){ return buildFullCatalog(); }
+
+    async function buildFullCatalog(){
+      if(!listEl) return;
+      listEl.innerHTML = '';
+      setDrawerMode('catalog');
+
+      // 1) Ensure manifest is loaded
+      if(!state.manifest){
+        try{ await loadManifest(); }catch(_){ }
+      }
+
+      const files = Array.isArray(state.manifest && state.manifest.playlists) ? state.manifest.playlists.slice() : [];
+
+      // 2) Fetch all playlists referenced by manifest (in parallel)
+      const fetched = await Promise.all(files.map(async (fname) => {
+        try{
+          const res = await fetch(`./playlists/${fname}`, { cache:'no-store' });
+          const data = await res.json();
+          const id = fname.replace(/\.json$/,'');
+          const pl = { id, __sourceFile: fname, __raw: data, ...data };
+          state.playlistCache[fname] = pl;
+          return pl;
+        }catch(_){ return null; }
+      }));
+
+      // 3) Build DOM: for each playlist, render a section title, then its items
+      const catalogs = fetched.filter(Boolean).map(pl => ({ key: pl.__sourceFile, pl }));
+
+      if(!catalogs.length){
+        const empty = document.createElement('div');
+        empty.className = 'drawer-item';
+        empty.style.justifyContent = 'flex-start';
+        empty.textContent = 'No playlists found in playlists/index.json';
+        listEl.appendChild(empty);
+        return;
+      }
+
+      catalogs.forEach(({key, pl}) => {
+        const titleEl = document.createElement('span');
+        titleEl.className = 'drawer-section-title';
+        titleEl.textContent = pl.title || key;
+        listEl.appendChild(titleEl);
+
+        const items = Array.isArray(pl.items) ? pl.items : [];
+        items.forEach((it, idx) => {
+          const btn = document.createElement('button');
+          btn.className = 'drawer-item';
+          const safeTitle = it && (it.title || it.url) || `Item ${idx+1}`;
+          btn.innerHTML = `<span>${safeTitle}</span><span class=\"meta\">${it.url? '': ''}</span>`;
+          btn.addEventListener('click', async () => {
+            try{
+              // Set current playlist
+              state.currentPlaylist = { ...pl };
+              $('#playlistName').textContent = state.currentPlaylist.title || state.currentPlaylist.id;
+              setQueue(false);
+              const items = Array.isArray(state.currentPlaylist.items) ? state.currentPlaylist.items.slice() : [];
+              state.queue = items;
+              state.index = idx;
+              playCurrent();
+            }catch(_){ }
+            closeDrawer();
+          });
+          listEl.appendChild(btn);
+        });
+      });
+    }
+
+    function highlightActiveDrawerItem(){
+      if(!listEl) return;
+      const key = (state.currentPlaylist && (state.currentPlaylist.__sourceFile || state.currentPlaylist.id)) || '';
+      listEl.querySelectorAll('.drawer-item').forEach(el => {
+        const match = (el.dataset.filename && el.dataset.filename === key) || (el.dataset.inline && el.dataset.inline === key);
+        el.classList.toggle('active', !!match);
+      });
+    }
+
+    async function loadPlaylistForDrawer(filename){
+      if(state.playlistCache[filename]) return state.playlistCache[filename];
+      const res = await fetch(`./playlists/${filename}`, { cache:'no-store' });
+      const data = await res.json();
+      const id = filename.replace(/\.json$/,'');
+      const pl = { id, __sourceFile: filename, __raw: data, ...data };
+      state.playlistCache[filename] = pl;
+      return pl;
+    }
+
+    function renderPlaylistItems(pl, key){
+      if(!listEl) return;
+      listEl.innerHTML = '';
+      setDrawerMode('items', pl.title || pl.id || 'Playlist');
+      const items = Array.isArray(pl.items) ? pl.items : [];
+      items.forEach((it, idx) => {
+        const btn = document.createElement('button');
+        btn.className = 'drawer-item';
+        const safeTitle = it && (it.title || it.url) || `Item ${idx+1}`;
+        btn.innerHTML = `<span>${safeTitle}</span><span class=\"meta\">${it.url? 'link':''}</span>`;
+        btn.addEventListener('click', async () => {
+          try{
+            if(!state.currentPlaylist || (state.currentPlaylist.__sourceFile || state.currentPlaylist.id) !== key){
+              state.currentPlaylist = { ...pl };
+              setQueue(false);
+            }
+            const items = Array.isArray(state.currentPlaylist.items) ? state.currentPlaylist.items.slice() : [];
+            const foundIndex = items.findIndex(x => x === it);
+            state.queue = items;
+            state.index = foundIndex >= 0 ? foundIndex : idx;
+            playCurrent();
+          }catch(_){ }
+          closeDrawer();
+        });
+        listEl.appendChild(btn);
+      });
+    }
+
+    if(closeDrawerBtn) closeDrawerBtn.addEventListener('click', () => closeDrawer());
+    if(scrim) scrim.addEventListener('click', () => closeDrawer());
+    if(drawerBackBtn) drawerBackBtn.addEventListener('click', async () => { await buildFullCatalog(); });
+    if(randomPlBtn) randomPlBtn.addEventListener('click', async () => {
+      await pickRandomPlaylist();
+      const count = Array.isArray(state.queue) ? state.queue.length : 0;
+      if(count > 0){
+        state.index = Math.floor(Math.random() * count);
+        playCurrent();
+      } else {
+        updateStatus('No tracks found in selected playlist.');
+      }
+      closeDrawer();
+      highlightActiveDrawerItem();
+    });
+    window.addEventListener('keydown', (e) => { if(e.key === 'Escape'){ closeDrawer(); } });
   </script>
 </body>
 </html>
