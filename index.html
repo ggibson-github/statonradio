@@ -190,6 +190,8 @@
     .title-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
     h1{font-size:clamp(22px, 3.2vw, 34px);margin:0;letter-spacing:.5px;line-height:1.05}
     .badge{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--glassBorder);background:var(--glass);color:var(--accent)}
+    .support-link{text-decoration:none;cursor:pointer;transition:all 150ms ease}
+    .support-link:hover{border-color:var(--accent);box-shadow:0 0 0 2px rgba(82,255,227,.15) inset;color:var(--accent2)}
 
     .nowplaying{font-size:14px;color:var(--muted);margin-top:6px}
     .nowplaying-link{color:var(--muted);text-decoration:none}
@@ -326,6 +328,7 @@
         <div class="title-row">
           <h1>Star Citizen Radio — Stanton</h1>
           <span class="badge">Live Mix</span>
+          <a href="https://www.ko-fi.com/delnorin" target="_blank" rel="noopener" class="badge support-link" title="Support on Ko-fi">$ Support $</a>
           <span class="neon-signal" aria-hidden="true" title="On‑air">
             <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <circle class="dot" cx="12" cy="12" r="1.6" />
